@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sdn
+          POSTGRES_PASSWORD: sdn
+          POSTGRES_DB: sdn_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sdn -d sdn_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://sdn:sdn@127.0.0.1:5432/sdn_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://sdn:sdn@127.0.0.1:5432/sdn_test?sslmode=disable
+      TOKEN_SECRET: ci-token-secret
+      OIDC_CLIENT_SECRET: ci-oidc-secret
+      AUTH_MODE: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Vet and test
+        run: |
+          go vet $(go list ./... | grep -v '/apps/web/')
+          go test $(go list ./... | grep -v '/apps/web/')
+      - name: Validate migrations
+        run: go run ./services/api/cmd/api migrate
+      - name: Build processes
+        run: |
+          go build -o bin/sdn-api ./services/api/cmd/api
+          go build -o bin/sdn-worker ./services/worker/cmd/worker
+          go build -o bin/sdn-agent ./connectors/site-agent
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Scan for committed secrets
+        run: sh scripts/check-secrets.sh
+      - name: Vulnerability check
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest $(go list ./... | grep -v '/apps/web/')
