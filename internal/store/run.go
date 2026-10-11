@@ -541,6 +541,13 @@ func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep 
 		`, orgID, mustJSON(doc), changeID); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			SET status = 'skipped', updated_at = now(), result = '{"reason":"rollback was not required"}'
+			WHERE change_request_id = $1 AND operation_key LIKE 'compensate:%' AND status = 'pending'
+		`, changeID); err != nil {
+			return err
+		}
 		if err := forceStatus(ctx, tx, changeID, "succeeded", ""); err != nil {
 			return err
 		}

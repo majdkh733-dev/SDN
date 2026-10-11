@@ -124,6 +124,12 @@ func TestPlatformJourneys(t *testing.T) {
 	if change["status"] != "succeeded" {
 		t.Fatalf("status %v detail %v steps %v", change["status"], change["error_detail"], change["steps"])
 	}
+	for _, raw := range change["steps"].([]any) {
+		step := raw.(map[string]any)
+		if step["status"] == "pending" {
+			t.Fatalf("pending step after success: %v", step["operation_key"])
+		}
+	}
 
 	spec["name"] = "finance-https-v2"
 	var policy2 map[string]any
