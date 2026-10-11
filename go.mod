@@ -2,6 +2,8 @@ module github.com/majdkh733-dev/SDN
 
 go 1.26.0
 
+toolchain go1.26.9
+
 require (
 	github.com/jackc/pgx/v5 v5.9.2
 	go.temporal.io/api v1.43.0
