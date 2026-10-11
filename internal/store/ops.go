@@ -500,6 +500,9 @@ type ControllerStatus struct {
 	Coordination   string           `json:"coordination"`
 	Etcd           string           `json:"etcd"`
 	WriteAuthority string           `json:"write_authority"`
+	Orchestration  string           `json:"orchestration"`
+	Temporal       string           `json:"temporal"`
+	SecretBackend  string           `json:"secret_backend"`
 	Epochs         []map[string]any `json:"epochs"`
 	Workers        []map[string]any `json:"workers"`
 	Notice         string           `json:"notice"`

@@ -17,14 +17,21 @@ import (
 	"github.com/majdkh733-dev/SDN/internal/authn"
 	"github.com/majdkh733-dev/SDN/internal/config"
 	"github.com/majdkh733-dev/SDN/internal/domain"
+	"github.com/majdkh733-dev/SDN/internal/secrets"
 	"github.com/majdkh733-dev/SDN/internal/store"
 )
 
+type ChangeStarter interface {
+	StartChange(ctx context.Context, orgID, changeID string) error
+}
+
 type Server struct {
-	Store  *store.Store
-	Config config.Config
-	Signer *signer
-	Log    *slog.Logger
+	Store     *store.Store
+	Config    config.Config
+	Signer    *signer
+	Log       *slog.Logger
+	Secrets   secrets.Manager
+	Workflows ChangeStarter
 }
 
 func New(cfg config.Config, st *store.Store, log *slog.Logger) (*Server, error) {
@@ -171,6 +178,12 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.Pool().Ping(r.Context()); err != nil {
 		writeErr(w, apierr.New(503, "unavailable", "database is not ready"))
 		return
+	}
+	if pinger, ok := s.Secrets.(interface{ Ping(context.Context) error }); ok {
+		if err := pinger.Ping(r.Context()); err != nil {
+			writeErr(w, apierr.New(503, "unavailable", "secret backend is not ready"))
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
@@ -891,14 +904,25 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.StalePlan())
 		return
 	}
-	if current.Status != "approved" && current.Status != "unknown" && current.Status != "queued" && current.Status != "applying" {
+	switch current.Status {
+	case "approved", "unknown", "queued", "applying", "verifying", "partial", "compensating":
+	default:
 		writeErr(w, apierr.Conflict("conflict", "Only an approved change can be executed"))
 		return
 	}
 	orgID := p.Organization.OrganizationID
 	changeID := current.ID
+	if err := s.Store.ConfirmExecution(r.Context(), orgID, p.User.ID, changeID, body.PlanHash); err != nil {
+		writeErr(w, err)
+		return
+	}
 	if s.Config.InlineWorkflows {
 		if err := s.Store.RunChange(r.Context(), orgID, changeID); err != nil {
+			writeErr(w, err)
+			return
+		}
+	} else if s.Workflows != nil {
+		if err := s.Workflows.StartChange(r.Context(), orgID, changeID); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -1031,6 +1055,19 @@ func (s *Server) controllers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	item.SecretBackend = s.Config.SecretBackend
+	if item.SecretBackend == "" {
+		item.SecretBackend = "memory"
+	}
+	item.Orchestration = "postgresql"
+	item.Temporal = "not_configured"
+	if s.Config.TemporalAddress != "" {
+		item.Orchestration = "temporal"
+		item.Temporal = "address_set_client_missing"
+		if s.Workflows != nil {
+			item.Temporal = "client_configured"
+		}
 	}
 	writeJSON(w, http.StatusOK, item)
 }

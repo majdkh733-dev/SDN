@@ -51,6 +51,7 @@ type Change struct {
 	RequesterEmail  string         `json:"requester_email"`
 	ExecutionEpoch  int64          `json:"execution_epoch"`
 	CancelRequested bool           `json:"cancel_requested"`
+	AuthorConfirmed bool           `json:"author_confirmed"`
 	ErrorDetail     string         `json:"error_detail"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
@@ -159,7 +160,7 @@ func loadChange(ctx context.Context, tx pgx.Tx, orgID, id string) (Change, error
 	var impactRaw []byte
 	err := tx.QueryRow(ctx, `
 		SELECT c.id::text, c.policy_version_id::text, p.name, c.plan_hash, c.status, c.impact,
-		       c.requested_by::text, u.email, c.execution_epoch, c.cancel_requested, c.error_detail,
+		       c.requested_by::text, u.email, c.execution_epoch, c.cancel_requested, c.author_confirmed, c.error_detail,
 		       c.created_at, c.updated_at
 		FROM change_requests c
 		JOIN policy_versions v ON v.id = c.policy_version_id
@@ -168,7 +169,7 @@ func loadChange(ctx context.Context, tx pgx.Tx, orgID, id string) (Change, error
 		WHERE c.organization_id = $1 AND c.id = $2
 	`, orgID, id).Scan(
 		&change.ID, &change.PolicyVersionID, &change.PolicyName, &change.PlanHash, &change.Status, &impactRaw,
-		&change.RequestedBy, &change.RequesterEmail, &change.ExecutionEpoch, &change.CancelRequested, &change.ErrorDetail,
+		&change.RequestedBy, &change.RequesterEmail, &change.ExecutionEpoch, &change.CancelRequested, &change.AuthorConfirmed, &change.ErrorDetail,
 		&change.CreatedAt, &change.UpdatedAt,
 	)
 	if err != nil {
@@ -297,6 +298,47 @@ func (s *Store) DecideChange(ctx context.Context, orgID, changeID, reviewerID, d
 		return Change{}, err
 	}
 	return s.GetChange(ctx, orgID, changeID)
+}
+
+func (s *Store) ConfirmExecution(ctx context.Context, orgID, userID, changeID, planHash string) error {
+	return s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		var status, hash string
+		var confirmed bool
+		err := tx.QueryRow(ctx, `
+			SELECT status, plan_hash, author_confirmed
+			FROM change_requests WHERE organization_id = $1 AND id = $2 FOR UPDATE
+		`, orgID, changeID).Scan(&status, &hash, &confirmed)
+		if err != nil {
+			return mapDB(err, "change request")
+		}
+		if hash != planHash {
+			return apierr.StalePlan()
+		}
+		if confirmed && status != "validated" && status != "rejected" && status != "cancelled" {
+			return nil
+		}
+		if status != "approved" {
+			return apierr.Conflict("conflict", "Only an approved change can be confirmed for execution")
+		}
+		var approved bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM approvals
+				WHERE change_request_id = $1 AND decision = 'approved' AND plan_hash = $2
+			)
+		`, changeID, planHash).Scan(&approved); err != nil {
+			return err
+		}
+		if !approved {
+			return apierr.Forbidden("execution requires an approval of this exact plan hash")
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE change_requests
+			SET author_confirmed = true, confirmed_by = $3, confirmed_at = now(), updated_at = now()
+			WHERE organization_id = $1 AND id = $2
+		`, orgID, changeID, userID)
+		return err
+	})
 }
 
 func (s *Store) RequestCancel(ctx context.Context, orgID, changeID string) (Change, error) {

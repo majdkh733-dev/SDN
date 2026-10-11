@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -39,19 +40,21 @@ type runnable struct {
 	Epoch     int64
 	RunID     string
 	Cancel    bool
+	Mode      string
 }
 
 func (s *Store) runLocked(ctx context.Context, orgID, changeID string) error {
 	var prep runnable
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		var status, versionID, planHash, requester string
+		var status, versionID, planHash string
 		var epoch int64
-		var cancel bool
+		var cancel, authorConfirmed bool
 		var impactRaw []byte
 		err := tx.QueryRow(ctx, `
-			SELECT status, policy_version_id::text, plan_hash, impact, requested_by::text, execution_epoch, cancel_requested
+			SELECT status, policy_version_id::text, plan_hash, impact,
+			       execution_epoch, cancel_requested, author_confirmed
 			FROM change_requests WHERE organization_id = $1 AND id = $2 FOR UPDATE
-		`, orgID, changeID).Scan(&status, &versionID, &planHash, &impactRaw, &requester, &epoch, &cancel)
+		`, orgID, changeID).Scan(&status, &versionID, &planHash, &impactRaw, &epoch, &cancel, &authorConfirmed)
 		if err != nil {
 			return mapDB(err, "change request")
 		}
@@ -59,41 +62,42 @@ func (s *Store) runLocked(ctx context.Context, orgID, changeID string) error {
 		case "succeeded", "failed", "compensated", "rollback_failed", "cancelled", "rejected", "validated":
 			return nil
 		}
-		if err := ensureLatestVersion(ctx, tx, versionID); err != nil {
-			return forceStatus(ctx, tx, changeID, "failed", "A newer policy version superseded this plan")
+		if !authorConfirmed {
+			return apierr.Forbidden("approval does not start execution; the author must confirm this plan")
 		}
-		impact, spec, err := impactTx(ctx, tx, orgID, versionID)
-		if err != nil {
+		var stored domain.Impact
+		if err := json.Unmarshal(impactRaw, &stored); err != nil {
 			return err
 		}
-		hash, err := PlanHash(spec, impact)
-		if err != nil {
-			return err
-		}
-		applied, err := countStepStatus(ctx, tx, changeID, "apply:%", "succeeded")
-		if err != nil {
-			return err
-		}
-		if hash != planHash && applied == 0 && status != "unknown" {
-			return forceStatus(ctx, tx, changeID, "failed", "The plan no longer matches the approved preview")
-		}
-		if status == "approved" {
-			if err := transition(ctx, tx, orgID, changeID, "approved", "queued", ""); err != nil {
+		original := status
+		recovery := original == "applying" || original == "verifying" || original == "partial" || original == "compensating" || original == "unknown"
+		var impact domain.Impact
+		var spec domain.PolicySpec
+		if recovery {
+			impact = stored
+			_, spec, err = impactTx(ctx, tx, orgID, versionID)
+			if err != nil {
 				return err
 			}
-			status = "queued"
-		}
-		if status == "queued" {
-			if err := transition(ctx, tx, orgID, changeID, "queued", "applying", ""); err != nil {
+		} else {
+			if err := ensureLatestVersion(ctx, tx, versionID); err != nil {
+				return forceStatus(ctx, tx, changeID, "failed", "A newer policy version superseded this plan")
+			}
+			impact, spec, err = impactTx(ctx, tx, orgID, versionID)
+			if err != nil {
 				return err
 			}
-			status = "applying"
-		}
-		if status == "unknown" {
-			if err := forceStatus(ctx, tx, changeID, "applying", "retry after unknown outcome"); err != nil {
+			hash, err := PlanHash(spec, impact)
+			if err != nil {
 				return err
 			}
-			status = "applying"
+			applied, err := countStepStatus(ctx, tx, changeID, "apply:%", "succeeded")
+			if err != nil {
+				return err
+			}
+			if hash != planHash && applied == 0 {
+				return forceStatus(ctx, tx, changeID, "failed", "The plan no longer matches the approved preview")
+			}
 		}
 		var approved bool
 		if err := tx.QueryRow(ctx, `
@@ -106,6 +110,24 @@ func (s *Store) runLocked(ctx context.Context, orgID, changeID string) error {
 		}
 		if !approved {
 			return apierr.Forbidden("execution requires an approval of this exact plan hash")
+		}
+		if original == "approved" {
+			if err := transition(ctx, tx, orgID, changeID, "approved", "queued", ""); err != nil {
+				return err
+			}
+			status = "queued"
+		}
+		if status == "queued" {
+			if err := transition(ctx, tx, orgID, changeID, "queued", "applying", ""); err != nil {
+				return err
+			}
+			status = "applying"
+		}
+		if original == "unknown" {
+			if err := forceStatus(ctx, tx, changeID, "applying", "retry after unknown outcome"); err != nil {
+				return err
+			}
+			status = "applying"
 		}
 		if epoch == 0 {
 			var domainName string
@@ -131,12 +153,22 @@ func (s *Store) runLocked(ctx context.Context, orgID, changeID string) error {
 			}
 		}
 		var runID string
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO workflow_runs (organization_id, change_request_id, status, started_at)
-			VALUES ($1, $2, 'running', now())
-			RETURNING id::text
-		`, orgID, changeID).Scan(&runID); err != nil {
-			return err
+		err = tx.QueryRow(ctx, `
+			SELECT id::text FROM workflow_runs
+			WHERE organization_id = $1 AND change_request_id = $2 AND status = 'running'
+			ORDER BY created_at DESC LIMIT 1
+		`, orgID, changeID).Scan(&runID)
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO workflow_runs (organization_id, change_request_id, status, started_at)
+				VALUES ($1, $2, 'running', now())
+				RETURNING id::text
+			`, orgID, changeID).Scan(&runID); err != nil {
+				return err
+			}
 		}
 		if err := ensureStep(ctx, tx, orgID, runID, changeID, "", "revalidate", epoch); err != nil {
 			return err
@@ -158,11 +190,24 @@ func (s *Store) runLocked(ctx context.Context, orgID, changeID string) error {
 		if _, err := tx.Exec(ctx, `UPDATE execution_steps SET status = 'succeeded', updated_at = now(), result = '{"ok":true}' WHERE change_request_id = $1 AND operation_key = 'revalidate' AND status = 'pending'`, changeID); err != nil {
 			return err
 		}
-		prep = runnable{Status: status, VersionID: versionID, PlanHash: planHash, Impact: impact, Spec: spec, Epoch: epoch, RunID: runID, Cancel: cancel}
+		mode := "apply"
+		switch original {
+		case "verifying":
+			mode = "verify"
+		case "partial", "compensating":
+			mode = "compensate"
+		}
+		prep = runnable{Status: status, VersionID: versionID, PlanHash: planHash, Impact: impact, Spec: spec, Epoch: epoch, RunID: runID, Cancel: cancel, Mode: mode}
 		return nil
 	})
 	if err != nil || prep.VersionID == "" {
 		return err
+	}
+	switch prep.Mode {
+	case "verify":
+		return s.verifySuccess(ctx, orgID, changeID, prep)
+	case "compensate":
+		return s.compensate(ctx, orgID, changeID, prep)
 	}
 	if err := s.backupStep(ctx, orgID, changeID, prep); err != nil {
 		return err
@@ -442,18 +487,51 @@ func (s *Store) finishChange(ctx context.Context, orgID, changeID string, prep r
 }
 
 func (s *Store) compensate(ctx context.Context, orgID, changeID string, prep runnable) error {
-	if err := s.forceChange(ctx, orgID, changeID, "partial", "One or more devices did not accept the change"); err != nil {
-		return err
-	}
+	var status string
 	if err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		return forceStatus(ctx, tx, changeID, "compensating", "Removing simulator ACLs from devices that were updated")
+		return tx.QueryRow(ctx, `SELECT status FROM change_requests WHERE organization_id = $1 AND id = $2`, orgID, changeID).Scan(&status)
 	}); err != nil {
 		return err
 	}
+	switch status {
+	case "applying":
+		if err := s.forceChange(ctx, orgID, changeID, "partial", "One or more devices did not accept the change"); err != nil {
+			return err
+		}
+		if err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+			return forceStatus(ctx, tx, changeID, "compensating", "Removing simulator ACLs from devices that were updated")
+		}); err != nil {
+			return err
+		}
+	case "partial":
+		if err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+			return forceStatus(ctx, tx, changeID, "compensating", "Removing simulator ACLs from devices that were updated")
+		}); err != nil {
+			return err
+		}
+	case "compensating":
+	default:
+		return fmt.Errorf("cannot compensate from %s", status)
+	}
 	rollbackFailed := false
 	for _, id := range deviceIDs(prep.Impact) {
-		var applyStatus string
+		key := "compensate:" + id
+		var stepStatus string
 		err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status FROM execution_steps WHERE change_request_id = $1 AND operation_key = $2`, changeID, key).Scan(&stepStatus)
+		})
+		if err != nil {
+			return err
+		}
+		switch stepStatus {
+		case "compensated", "skipped":
+			continue
+		case "compensation_failed":
+			rollbackFailed = true
+			continue
+		}
+		var applyStatus string
+		err = s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT status FROM execution_steps WHERE change_request_id = $1 AND operation_key = $2`, changeID, "apply:"+id).Scan(&applyStatus)
 		})
 		if err != nil {
@@ -461,7 +539,7 @@ func (s *Store) compensate(ctx context.Context, orgID, changeID string, prep run
 		}
 		if applyStatus != "succeeded" {
 			_ = s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE execution_steps SET status = 'skipped', updated_at = now() WHERE change_request_id = $1 AND operation_key = $2 AND status = 'pending'`, changeID, "compensate:"+id)
+				_, err := tx.Exec(ctx, `UPDATE execution_steps SET status = 'skipped', updated_at = now() WHERE change_request_id = $1 AND operation_key = $2 AND status IN ('pending', 'running')`, changeID, key)
 				return err
 			})
 			continue
@@ -471,12 +549,11 @@ func (s *Store) compensate(ctx context.Context, orgID, changeID string, prep run
 			if err := tx.QueryRow(ctx, `SELECT fail_next_rollback FROM devices WHERE id = $1 FOR UPDATE`, id).Scan(&fail); err != nil {
 				return err
 			}
-			key := "compensate:" + id
 			if fail {
 				if _, err := tx.Exec(ctx, `UPDATE devices SET fail_next_rollback = false WHERE id = $1`, id); err != nil {
 					return err
 				}
-				_, err := tx.Exec(ctx, `UPDATE execution_steps SET status = 'compensation_failed', updated_at = now(), result = '{"outcome":"rollback failed"}' WHERE change_request_id = $1 AND operation_key = $2`, changeID, key)
+				_, err := tx.Exec(ctx, `UPDATE execution_steps SET status = 'compensation_failed', updated_at = now(), result = '{"outcome":"rollback failed"}' WHERE change_request_id = $1 AND operation_key = $2 AND status <> 'compensation_failed'`, changeID, key)
 				rollbackFailed = true
 				return err
 			}
@@ -500,8 +577,38 @@ func (s *Store) compensate(ctx context.Context, orgID, changeID string, prep run
 }
 
 func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep runnable) error {
+	if err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		var status string
+		if err := tx.QueryRow(ctx, `SELECT status FROM change_requests WHERE organization_id = $1 AND id = $2`, orgID, changeID).Scan(&status); err != nil {
+			return err
+		}
+		if status == "verifying" || status == "succeeded" {
+			return nil
+		}
+		if status != "applying" {
+			return fmt.Errorf("cannot verify from %s", status)
+		}
+		return forceStatus(ctx, tx, changeID, "verifying", "")
+	}); err != nil {
+		return err
+	}
 	return s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		if err := forceStatus(ctx, tx, changeID, "verifying", ""); err != nil {
+		var verifyStatus string
+		if err := tx.QueryRow(ctx, `SELECT status FROM execution_steps WHERE change_request_id = $1 AND operation_key = 'verify'`, changeID).Scan(&verifyStatus); err != nil {
+			return err
+		}
+		if verifyStatus == "succeeded" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE execution_steps
+				SET status = 'skipped', updated_at = now(), result = '{"reason":"rollback was not required"}'
+				WHERE change_request_id = $1 AND operation_key LIKE 'compensate:%' AND status = 'pending'
+			`, changeID); err != nil {
+				return err
+			}
+			if err := forceStatus(ctx, tx, changeID, "succeeded", ""); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `UPDATE workflow_runs SET status = 'succeeded', finished_at = now() WHERE change_request_id = $1 AND status = 'running'`, changeID)
 			return err
 		}
 		missing := 0
@@ -564,7 +671,8 @@ func (s *Store) ClaimedChanges(ctx context.Context) ([][2]string, error) {
 	err := s.WithBypass(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT organization_id::text, id::text FROM change_requests
-			WHERE status IN ('queued', 'applying', 'unknown')
+			WHERE author_confirmed
+			  AND status IN ('approved', 'queued', 'applying', 'verifying', 'partial', 'compensating', 'unknown')
 			ORDER BY updated_at
 			LIMIT 20
 		`)
