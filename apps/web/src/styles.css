@@ -99,10 +99,12 @@ h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
   padding: 12px;
 }
 .stack { display: grid; gap: 12px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
-.card strong { display: block; font-size: 22px; font-weight: 600; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.card strong { display: block; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.25; }
 .card span { color: var(--muted); font-size: 12px; }
+.status-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.status-cards .card strong { font-size: 15px; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 .grow { flex: 1; min-width: 160px; }
@@ -177,4 +179,5 @@ textarea { min-height: 72px; resize: vertical; }
   .sidebar.open { transform: none; }
   .sidebar.open + .scrim, .scrim.show { display: block; position: fixed; inset: 0; background: rgba(28, 40, 52, 0.28); z-index: 2; }
   .main { margin-inline-start: 0; }
+  .status-cards { grid-template-columns: 1fr; }
 }

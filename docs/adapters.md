@@ -5,7 +5,7 @@ The API calls adapters. The browser does not.
 | Kind | Status | What the code does |
 | --- | --- | --- |
 | simulator | demo | Deterministic discovery and ACL apply. Verified by `TestPlatformJourneys` and the site-agent test. Devices are not forwarding traffic. |
-| ovn | implemented_unverified | `connectors/ovn` runs `ovn-nbctl`. Unit tests use a fake runner. This environment has no OVN lab, so discovery reports that the adapter is unverified when the binary is missing. |
+| ovn | implemented_unverified | `connectors/ovn` runs `ovn-nbctl`. Unit tests use a fake runner. `TestLabProbe` and `scripts/ovn-lab-check.sh` reported `implemented_unverified` because `ovn-nbctl` is not installed. No northbound database was listed. |
 | netconf | not_implemented | Listed in the catalog. Create connector rejects it. |
 | gnmi | not_implemented | Listed in the catalog. |
 | vendor_api | not_implemented | Listed in the catalog. |

@@ -1,7 +1,8 @@
 # Container hosting for PostgreSQL, the API, and the worker.
 # The browser app is apps/web and is published on Vercel, not from this file.
-# Temporal and etcd are not included. Workflow state and fencing live in PostgreSQL.
-# Device secrets are references such as vault://... and are not written into this file.
+# etcd is not included. Fencing is a PostgreSQL epoch.
+# Leave TEMPORAL_ADDRESS empty to use the PostgreSQL worker. This file does not start a Temporal cluster.
+# SECRET_BACKEND defaults to memory. Production must set vault and must not put secret values in this file.
 
 services:
   postgres:
@@ -40,6 +41,13 @@ services:
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       INLINE_WORKFLOWS: ${INLINE_WORKFLOWS:-false}
       DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
+      SECRET_BACKEND: ${SECRET_BACKEND:-memory}
+      SECRET_FILE_DIR: ${SECRET_FILE_DIR:-}
+      VAULT_ADDR: ${VAULT_ADDR:-}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_MOUNT: ${VAULT_MOUNT:-secret}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
     ports:
       - "8080:8080"
     depends_on:
@@ -57,6 +65,13 @@ services:
       TOKEN_SECRET: ${TOKEN_SECRET:-dev-only-token-secret}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-oidc-secret}
       INLINE_WORKFLOWS: "false"
+      SECRET_BACKEND: ${SECRET_BACKEND:-memory}
+      SECRET_FILE_DIR: ${SECRET_FILE_DIR:-}
+      VAULT_ADDR: ${VAULT_ADDR:-}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_MOUNT: ${VAULT_MOUNT:-secret}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
     depends_on:
       postgres:
         condition: service_healthy

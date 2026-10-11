@@ -35,7 +35,7 @@ To exercise the outbound connector, enroll a token in the console, then:
 SDN_API_URL=http://127.0.0.1:8080 SDN_AGENT_TOKEN='the-token' SDN_SITE_NAME='Riyadh DC1' go run ./connectors/site-agent
 ```
 
-Queue discovery with "Queue for site agent". With `INLINE_WORKFLOWS=false`, run `go run ./services/worker/cmd/worker` so approved changes are claimed outside the API process. The default local API runs workflows inline so the console can follow them without a second process.
+Queue discovery with "Queue for site agent". With `INLINE_WORKFLOWS=false`, run `go run ./services/worker/cmd/worker` so confirmed changes are claimed outside the API process. The default local API runs workflows inline so the console can follow them without a second process. Leave `TEMPORAL_ADDRESS` empty unless a Temporal frontend is already running. An empty address keeps the PostgreSQL worker. `SECRET_BACKEND=memory` is the local default and stores nothing durable.
 
 ## Containers
 
@@ -71,7 +71,7 @@ The site agent runs inside the managed network and dials out. Do not publish dev
 
 Set `VITE_API_BASE_URL` to the public API origin before the production build. Because that origin differs from the Vercel origin, set the API to `COOKIE_SAMESITE=none` and `SECURE_COOKIES=true`, and include the Vercel origin in `ALLOWED_ORIGINS` and the callback in `OIDC_REDIRECT_URLS`.
 
-This environment does not have a Vercel token, so no deployment URL was created. Production launch remains incomplete until that project is created and the API, identity provider, database, and connectors are verified.
+Production launch remains incomplete until the Vercel project exists and the API, external OIDC issuer, PostgreSQL, Vault, and connectors are verified. The API process also has to be reachable at `VITE_API_BASE_URL`. A missing `VERCEL_TOKEN` means this repository cannot create that project.
 
 ## Demonstration versus production
 

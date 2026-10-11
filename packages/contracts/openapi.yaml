@@ -184,7 +184,7 @@ paths:
   /api/v1/changes/{id}/execute:
     post:
       summary: Execute an approved change
-      description: Requires confirm true and the current plan hash. The server rechecks approval, version, capabilities, and device state.
+      description: Approval does not start execution. Requires confirm true, the current plan hash, and a recorded approval of that hash. The author confirmation is stored before any device write. Recovery of an in-flight change reuses the stored policy version and device list.
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:

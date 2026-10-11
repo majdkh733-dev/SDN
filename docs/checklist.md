@@ -19,7 +19,7 @@ Status reflects the code in this repository, not a production deployment.
 - [x] Milestone 4 controlled execution on the simulator
 - [x] Milestone 5 operational views
 - [x] Simulator adapter
-- [ ] OVN adapter verified in a lab
+- [ ] OVN adapter verified in a lab (`TestLabProbe` and `scripts/ovn-lab-check.sh`: `implemented_unverified`, `ovn-nbctl` is not installed)
 - [x] Other vendors listed as not implemented
 
 ## Phase 3
@@ -30,11 +30,14 @@ Status reflects the code in this repository, not a production deployment.
 - [x] Server-side roles and organization isolation
 - [x] Inventory, topology, policy, change, backup, and audit APIs
 - [x] Connector enrollment, credential references, health, and outbound task lease
-- [x] Workflow persistence, idempotent steps, cancellation, and failure reporting
+- [x] Workflow persistence, idempotent steps, cancellation, failure reporting, and worker recovery (`TestWorkflowRecovery`)
+- [x] Author confirmation separate from approval
 - [x] GitHub Actions for Go, web, migrations, and security checks
 - [x] `.env.example` files
 - [x] Docker Compose and container images
+- [x] Temporal workflow and SDK test suite (`TestExecuteChangeUsesTheSuppliedIdentifiers`). No cluster is running in this environment
 - [ ] Temporal cluster
+- [x] Vault KV v2 client tested with an HTTP test server. Production config refuses memory and file backends
 - [ ] External Vault deployment
 
 ## Phase 4
@@ -42,7 +45,7 @@ Status reflects the code in this repository, not a production deployment.
 - [x] Eleven navigation pages
 - [x] Eight simulator journeys in the console
 - [x] English and Arabic RTL
-- [x] Explicit execution confirmation and stale-preview rejection
+- [x] Explicit execution confirmation and stale-preview rejection. Approval alone does not start execution
 - [x] Partial execution and rollback failure shown on the change
 - [ ] Lab adapter exercised from the console
 

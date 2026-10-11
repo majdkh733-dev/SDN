@@ -2,7 +2,7 @@
 
 ## Identity
 
-Production requires `AUTH_MODE=oidc` and `OIDC_ISSUER`. The API rejects production startup when the mode is `dev`, when `TOKEN_SECRET` or `OIDC_CLIENT_SECRET` is empty or `replace-me`, or when `SECURE_COOKIES` is not true.
+Production requires `AUTH_MODE=oidc` and `OIDC_ISSUER`. The API rejects production startup when the mode is `dev`, when `TOKEN_SECRET` or `OIDC_CLIENT_SECRET` is empty or `replace-me`, when `SECURE_COOKIES` is not true, when `SECRET_BACKEND` is not `vault`, or when `VAULT_ADDR` or `VAULT_TOKEN` is missing.
 
 Development runs an embedded authorization server at `/oidc`. It issues an authorization code after a password check and requires PKCE S256. The browser completes the code at `POST /api/v1/auth/session`. The token endpoint also checks the client secret, which stays on the server. Development password login at `POST /api/v1/auth/login` is disabled when `AUTH_MODE=oidc`.
 
@@ -21,7 +21,7 @@ Roles: viewer, operator, engineer, approver, administrator, recovery_operator.
 | Enroll connectors and members | administrator |
 | Restore | recovery_operator, administrator |
 
-The requester cannot approve their own change. Execution requires an approved (or unknown, for a retry) status, `confirm: true`, and the current plan hash. A preview token is an HMAC over the policy version, plan hash, and expiry (15 minutes). Creating or approving a change fails with `stale_plan` when the version is no longer the latest or the recomputed hash differs.
+The requester cannot approve their own change. Approval does not start execution. Execution requires the author to send `confirm: true` with the current plan hash. The API records `author_confirmed` only when an approval row exists for that hash. A preview token is an HMAC over the policy version, plan hash, and expiry (15 minutes). Creating, approving, or freshly starting a change fails with `stale_plan` when the version is no longer the latest or the recomputed hash differs. Recovery of a change that is already applying, verifying, or rolling back uses the stored version and device list instead of that freshness check.
 
 ## Isolation
 
@@ -31,7 +31,7 @@ A user in another organization receives not-found for a foreign device id. The i
 
 ## Secrets and data
 
-Connector create rejects a body field named `credential`. The stored value is a reference such as `vault://{org}/{connector}/management`. Enrollment tokens are returned once and stored as a hash. Logs for enrollment record the word `redacted`. Seed data contains emails, not passwords. The demonstration password exists only in `DEV_ADMIN_PASSWORD` at seed time.
+Connector create rejects a body field named `credential`. The stored value is a reference such as `vault://{org}/{connector}/management`. `SECRET_BACKEND=vault` reads and writes that path in Vault KV v2 under the key `value`. The file backend and the in-memory backend are for local tests. Production startup refuses both. This environment has no `VAULT_ADDR`, so the running API uses the memory backend and has not stored a device credential. Enrollment tokens are returned once and stored as a hash. Logs for enrollment record the word `redacted`. Seed data contains emails, not passwords. The demonstration password exists only in `DEV_ADMIN_PASSWORD` at seed time.
 
 Backups store a manifest and a checksum of the JSON PostgreSQL returned. They do not store secret values. Restore checks that checksum and records `pending_reconciliation`. It does not push configuration to devices.
 
@@ -41,4 +41,4 @@ Mutations from a browser origin that is not in `ALLOWED_ORIGINS` are rejected. T
 
 ## What this release does not claim
 
-An external identity provider, a Vault server, TLS termination, and a verified OVN lab are deployment tasks. The epoch row rejects a stale writer inside this database. It does not fence a session that a device already accepted.
+An external identity provider, a running Vault server, TLS termination, a Temporal cluster, and a verified OVN lab are deployment tasks. The Vault client and the Temporal workflow are implemented and tested without those servers. The epoch row rejects a stale writer inside this database. It does not fence a session that a device already accepted.

@@ -46,8 +46,8 @@ Reads (inventory, topology, drift, audit) require a read role. Writes that disco
 | Database | PostgreSQL |
 | Identity | OIDC authorization code with PKCE. Development also has an embedded provider. |
 | Authorization | Server-side roles |
-| Orchestration durability | PostgreSQL workflow rows, idempotent steps, advisory locks |
-| Secrets | Credential references. Values are not accepted by the API. |
+| Orchestration durability | PostgreSQL workflow rows, idempotent steps, advisory locks. Optional Temporal workflow when `TEMPORAL_ADDRESS` is set. |
+| Secrets | Credential references. Values are not accepted by the API. Vault KV v2 client when `SECRET_BACKEND=vault`. |
 | Southbound | Adapter boundary. Simulator plus OVN. |
 | Coordination store | PostgreSQL epochs. etcd is not deployed. |
 
@@ -60,7 +60,7 @@ Decisions are in `docs/adr/`. The schema is in `docs/schema.md`. The HTTP contra
 | 1 Platform foundation | Auth, organization isolation, roles, layout, sites, inventory, seed | Implemented and covered by the HTTP journey test |
 | 2 Network visibility | Device detail, interfaces, topology, capabilities, connector health, collection | Implemented for the simulator. OVN discovery returns the adapter error when `ovn-nbctl` is absent |
 | 3 Policy planning | Versioned policies, validation, compatibility evidence, impact preview | Implemented. A newer version invalidates the previous preview |
-| 4 Controlled execution | Change requests, approvals, durable execution, verification, backups, rollback | Implemented on the simulator, including a visible rollback failure |
+| 4 Controlled execution | Change requests, approvals, author confirmation, durable execution, verification, backups, rollback, worker recovery | Implemented on the simulator. `TestWorkflowRecovery` covers confirmation, interrupted verification, and interrupted compensation |
 | 5 Operational visibility | Desired versus observed, drift, workflow history, audit, command room | Implemented |
 
 Adapter scope stays narrow. See `docs/adapters.md`.
@@ -83,7 +83,7 @@ Local development uses PostgreSQL, migrations on API start, and `seed` for demon
 
 ## Phase 4 — Console
 
-The console has the eleven navigation pages, English and Arabic with RTL, deep links for filters, and the eight journeys against the API. Network execution asks the operator to type the first eight characters of the plan hash and to check a confirmation box. The server still requires `confirm: true`, a matching plan hash, a current policy version, approval, and a passing capability check.
+The console has the eleven navigation pages, English and Arabic with RTL, deep links for filters, and the eight journeys against the API. Network execution asks the operator to type the first eight characters of the plan hash and to check a confirmation box. The copy states that approval does not start execution. The server requires `confirm: true`, a matching plan hash, an approval of that hash, and a passing capability check before it sets `author_confirmed`. The Controllers page shows the orchestration driver, Temporal status, and secret backend returned by the API.
 
 ## Phase 5 — Hardening and launch
 
@@ -93,8 +93,9 @@ A frontend that runs the simulator is a demonstration release. Production launch
 
 ## Explicit gaps
 
-- Temporal is not imported. Durability is PostgreSQL. Do not describe a running Temporal cluster.
+- Temporal workflow code is implemented and covered by the SDK test suite. No Temporal cluster is deployed here, and `TEMPORAL_ADDRESS` is empty, so the driver that ran the recovery tests is PostgreSQL.
 - etcd is not deployed. Fencing is an epoch row per execution domain. A database epoch does not by itself close an external device session.
-- The OVN adapter has not been executed against a lab northbound database in this environment.
-- Vercel project creation needs an account token that is not present in this environment.
+- The Vault KV v2 client is implemented and tested against an in-process HTTP server. No Vault server is configured, so external secret storage is not deployed.
+- `TestLabProbe` and `scripts/ovn-lab-check.sh` reported `implemented_unverified` because `ovn-nbctl` is not installed. No lab northbound result exists.
+- Vercel project creation needs an account token. Production launch stays incomplete until the API, external OIDC, PostgreSQL, Vault, and connectors are deployed and verified.
 - Split-origin cookies need `COOKIE_SAMESITE=none` and `SECURE_COOKIES=true`.

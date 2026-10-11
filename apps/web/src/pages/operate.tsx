@@ -117,6 +117,7 @@ export function FabricPage() {
 
 type Controllers = {
   coordination: string; etcd: string; write_authority: string; notice: string;
+  orchestration: string; temporal: string; secret_backend: string;
   epochs: { execution_domain: string; epoch: number; holder: string; updated_at: string }[];
   workers: { id?: string; kind?: string; beat_at?: string }[];
 };
@@ -130,10 +131,13 @@ export function ControllersPage() {
         {status.data ? (
           <div className="stack">
             <p className="banner">{status.data.notice}</p>
-            <div className="cards">
+            <div className="cards status-cards">
               <div className="card"><strong>{status.data.coordination}</strong><span>{t("coordination")}</span></div>
               <div className="card"><strong>{status.data.etcd}</strong><span>{t("etcd")}</span></div>
               <div className="card"><strong>{status.data.write_authority}</strong><span>{t("domain")}</span></div>
+              <div className="card"><strong>{status.data.orchestration}</strong><span>{t("orchestration")}</span></div>
+              <div className="card"><strong>{status.data.temporal}</strong><span>{t("temporal")}</span></div>
+              <div className="card"><strong>{status.data.secret_backend}</strong><span>{t("secretBackend")}</span></div>
             </div>
             <section className="panel">
               <h2>{t("epochs")}</h2>
