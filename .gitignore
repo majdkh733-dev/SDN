@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+bin/
+*.out
+tmp/
+deploy/dev-vault/
+.DS_Store
+*.log
+apps/web/.env
+apps/web/.env.local

@@ -1,0 +1,248 @@
+openapi: 3.0.3
+info:
+  title: SDN API
+  version: 0.1.0
+  description: |
+    Organization-scoped network orchestration API. Responses use {"data": ...}.
+    Errors use {"error": {"code": "...", "message": "..."}}.
+    The browser is the only client. Device access stays behind connectors.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Process liveness
+      responses:
+        "200":
+          description: ok
+  /readyz:
+    get:
+      summary: Database readiness
+      responses:
+        "200":
+          description: ready
+        "503":
+          description: database unavailable
+  /api/v1/auth/login:
+    post:
+      summary: Development password login
+      description: Disabled when AUTH_MODE=oidc.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string}
+                password: {type: string, format: password}
+      responses:
+        "200":
+          description: Session cookie set
+  /api/v1/auth/session:
+    post:
+      summary: Exchange an OIDC code and PKCE verifier for a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, code_verifier, redirect_uri]
+              properties:
+                code: {type: string}
+                code_verifier: {type: string}
+                redirect_uri: {type: string}
+      responses:
+        "200":
+          description: Session cookie set
+  /api/v1/auth/me:
+    get:
+      summary: Current principal
+      responses:
+        "200":
+          description: Principal
+        "401":
+          description: Unauthenticated
+  /api/v1/sites:
+    get:
+      summary: List sites
+      responses:
+        "200": {description: Sites}
+    post:
+      summary: Register a site
+      responses:
+        "201": {description: Created}
+  /api/v1/connectors:
+    get:
+      summary: List connectors
+      responses:
+        "200": {description: Connectors}
+    post:
+      summary: Register a simulator or OVN connector
+      description: A credential value is rejected. The API stores a reference.
+      responses:
+        "201": {description: Created}
+        "409": {description: Unsupported adapter}
+  /api/v1/connectors/{id}/enrollment:
+    post:
+      summary: Issue a one-time enrollment token
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "201": {description: Token returned once}
+  /api/v1/connectors/{id}/discover:
+    post:
+      summary: Discover devices
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: query
+          name: via
+          schema: {type: string, enum: [agent]}
+      responses:
+        "200": {description: Simulator discovery result}
+        "202": {description: Task queued for the site agent}
+        "409": {description: OVN adapter unavailable or unsupported}
+  /api/v1/devices:
+    get:
+      summary: List devices
+      parameters:
+        - in: query
+          name: site_id
+          schema: {type: string}
+        - in: query
+          name: q
+          schema: {type: string}
+      responses:
+        "200": {description: Devices}
+  /api/v1/devices/{id}:
+    get:
+      summary: Device, interfaces, and capabilities
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": {description: Device detail}
+        "404": {description: Missing or another organization}
+  /api/v1/topology:
+    get:
+      summary: Topology for a lens
+      parameters:
+        - in: query
+          name: lens
+          schema: {type: string, enum: [performance, security, application]}
+        - in: query
+          name: site_id
+          schema: {type: string}
+      responses:
+        "200": {description: Nodes, edges, and a notice}
+  /api/v1/policies:
+    get:
+      summary: List policies
+      responses:
+        "200": {description: Policies}
+    post:
+      summary: Create and validate a policy
+      responses:
+        "201": {description: Policy version}
+        "400": {description: Validation error}
+  /api/v1/policies/{id}/preview:
+    post:
+      summary: Impact preview
+      description: Returns a plan hash and a 15-minute preview token. This is not execution authority.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": {description: Impact}
+  /api/v1/changes:
+    get:
+      summary: List change requests
+      parameters:
+        - in: query
+          name: status
+          schema: {type: string}
+      responses:
+        "200": {description: Changes}
+    post:
+      summary: Submit a preview for approval
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: {type: string}
+      responses:
+        "201": {description: Validated change}
+        "409": {description: stale_plan or blocked plan}
+  /api/v1/changes/{id}/approve:
+    post:
+      summary: Approve or reject
+      description: The requester cannot approve their own change.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": {description: Updated change}
+        "403": {description: Forbidden}
+  /api/v1/changes/{id}/execute:
+    post:
+      summary: Execute an approved change
+      description: Approval does not start execution. Requires confirm true, the current plan hash, and a recorded approval of that hash. The author confirmation is stored before any device write. Recovery of an in-flight change reuses the stored policy version and device list.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "202": {description: Change after the inline run, or after it was queued}
+        "400": {description: Confirmation missing}
+        "409": {description: stale_plan or wrong status}
+  /api/v1/drift-findings:
+    get:
+      summary: Drift findings
+      responses:
+        "200": {description: Findings}
+  /api/v1/drift-findings/scan:
+    post:
+      summary: Compare desired and observed state
+      responses:
+        "200": {description: Findings}
+  /api/v1/backups:
+    get:
+      summary: Configuration backup manifests
+      responses:
+        "200": {description: Backups}
+    post:
+      summary: Create a manifest backup
+      responses:
+        "201": {description: Backup}
+  /api/v1/backups/{id}/restore:
+    post:
+      summary: Request restoration
+      description: Verifies the manifest checksum and records pending_reconciliation. It does not push device configuration.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "202": {description: Restore requested}
+        "409": {description: Checksum mismatch}
+  /api/v1/audit-events:
+    get:
+      summary: Audit events
+      parameters:
+        - in: query
+          name: action
+          schema: {type: string}
+      responses:
+        "200": {description: Events}
+  /api/v1/controllers/status:
+    get:
+      summary: Coordination status
+      description: etcd is reported as not_deployed.
+      responses:
+        "200": {description: Status}
+  /api/v1/integrations:
+    get:
+      summary: Adapter catalog and support status
+      responses:
+        "200": {description: Integrations}
+components:
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, format: uuid}
