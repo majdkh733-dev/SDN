@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useNavigate, useOutletContext } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { api, can, type Principal } from "../api";
 import { Badge, Empty, Field, FormError, Page, QueryState, formatTime, onSubmit, useT } from "../ui";
 
@@ -48,7 +48,10 @@ export function PoliciesPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const { principal } = useOutletContext<{ principal: Principal }>();
-  const [form, setForm] = useState(emptySpec);
+  const [params] = useSearchParams();
+  const scopedSite = params.get("site") || "";
+  const scopedDevice = params.get("device") || "";
+  const [form, setForm] = useState({ ...emptySpec, site_ids: scopedSite ? [scopedSite] : [] });
   const [selected, setSelected] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const policies = useQuery({ queryKey: ["policies"], queryFn: () => api<Policy[]>("/api/v1/policies") });
@@ -97,6 +100,10 @@ export function PoliciesPage() {
     onSuccess: (change) => nav(`/changes/${change.id}`),
   });
 
+  useEffect(() => {
+    if (scopedSite) setForm((current) => ({ ...current, site_ids: current.site_ids.includes(scopedSite) ? current.site_ids : [...current.site_ids, scopedSite] }));
+  }, [scopedSite]);
+
   function toggleSite(id: string) {
     setForm((current) => ({
       ...current,
@@ -108,6 +115,7 @@ export function PoliciesPage() {
   return (
     <Page title={t("policies")} crumbs={[{ to: "/", label: t("command") }, { label: t("policies") }]}>
       <div className="stack">
+        {scopedSite || scopedDevice ? <p className="banner">{t("scopeHint")} {scopedDevice ? <Link to={`/inventory/devices/${scopedDevice}`}>{t("device")}</Link> : null}</p> : null}
         <section className="panel">
           <h2>{t("policies")}</h2>
           <QueryState loading={policies.isLoading} error={policies.error} onRetry={() => policies.refetch()}>

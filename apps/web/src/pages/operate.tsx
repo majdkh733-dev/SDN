@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { api, can, type Principal } from "../api";
 import { confirmationMatches } from "../confirm";
+import { ThemePanel } from "./theme";
 import { Badge, Empty, Field, FormError, Page, QueryState, formatTime, onSubmit, useT } from "../ui";
 import { useUI } from "../session";
 
@@ -367,6 +368,7 @@ export function SettingsPage() {
           </div>
           <p className="note">{t("authMode")}: {config.data?.auth_mode || "—"} · {config.data?.issuer}</p>
         </section>
+        <ThemePanel role={principal.role} />
         <section className="panel">
           <h2>{t("organization")}</h2>
           <p>{principal.organization.organization_name} · <Badge value={principal.role} /></p>

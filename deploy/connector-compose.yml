@@ -1,0 +1,18 @@
+# Runs one site connector. It dials out to SDN_API_URL. No ports are published.
+services:
+  connector:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.connector
+    network_mode: host
+    environment:
+      SDN_API_URL: ${SDN_API_URL:-http://127.0.0.1:8080}
+      SDN_ENROLLMENT_TOKEN: ${SDN_ENROLLMENT_TOKEN:-}
+      SDN_AGENT_TOKEN: ${SDN_AGENT_TOKEN:-}
+      SDN_AGENT_STATE: /var/lib/sdn-connector/credential
+    volumes:
+      - connector-state:/var/lib/sdn-connector
+    restart: unless-stopped
+
+volumes:
+  connector-state:

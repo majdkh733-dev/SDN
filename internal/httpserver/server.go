@@ -68,8 +68,34 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/sites", s.createSite)
 	mux.HandleFunc("GET /api/v1/connectors", s.listConnectors)
 	mux.HandleFunc("POST /api/v1/connectors", s.createConnector)
+	mux.HandleFunc("GET /api/v1/connectors/{id}", s.getConnector)
+	mux.HandleFunc("POST /api/v1/connectors/{id}", s.updateConnector)
 	mux.HandleFunc("POST /api/v1/connectors/{id}/enrollment", s.enroll)
+	mux.HandleFunc("POST /api/v1/connectors/{id}/revoke", s.revokeConnector)
+	mux.HandleFunc("POST /api/v1/connectors/{id}/replace", s.replaceConnector)
+	mux.HandleFunc("POST /api/v1/connectors/{id}/remove", s.removeConnector)
+	mux.HandleFunc("GET /api/v1/connectors/{id}/install", s.installConnector)
 	mux.HandleFunc("POST /api/v1/connectors/{id}/discover", s.discover)
+	mux.HandleFunc("GET /api/v1/discovery-profiles", s.listProfiles)
+	mux.HandleFunc("POST /api/v1/sites/{id}/discovery-profiles", s.createProfile)
+	mux.HandleFunc("GET /api/v1/sites/{id}/discovery-profiles", s.listProfiles)
+	mux.HandleFunc("POST /api/v1/discovery-profiles/{id}/run", s.runProfile)
+	mux.HandleFunc("GET /api/v1/discovery-jobs", s.listJobs)
+	mux.HandleFunc("GET /api/v1/discovery-jobs/{id}", s.getJob)
+	mux.HandleFunc("POST /api/v1/discovery-jobs/{id}/cancel", s.cancelJob)
+	mux.HandleFunc("GET /api/v1/discovery-jobs/{id}/observations", s.listObservations)
+	mux.HandleFunc("POST /api/v1/discovery-jobs/{id}/import", s.importObservations)
+	mux.HandleFunc("POST /api/v1/sites/{id}/assets/import", s.importCSV)
+	mux.HandleFunc("POST /api/v1/sites/{id}", s.updateSite)
+	mux.HandleFunc("POST /api/v1/site-links", s.createSiteLink)
+	mux.HandleFunc("POST /api/v1/devices/{id}", s.updateDevice)
+	mux.HandleFunc("GET /api/v1/preferences", s.preferences)
+	mux.HandleFunc("POST /api/v1/preferences/navigation", s.saveNavigation)
+	mux.HandleFunc("POST /api/v1/preferences/navigation/reset", s.resetNavigation)
+	mux.HandleFunc("POST /api/v1/preferences/theme", s.saveTheme)
+	mux.HandleFunc("POST /api/v1/preferences/theme/reset", s.resetTheme)
+	mux.HandleFunc("GET /api/v1/search", s.search)
+	mux.HandleFunc("GET /api/v1/command-room/incidents", s.incidents)
 	mux.HandleFunc("GET /api/v1/devices", s.listDevices)
 	mux.HandleFunc("GET /api/v1/devices/{id}", s.getDevice)
 	mux.HandleFunc("GET /api/v1/devices/{id}/interfaces", s.interfaces)
@@ -108,8 +134,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/memberships", s.memberships)
 	mux.HandleFunc("POST /api/v1/memberships", s.addMembership)
 	mux.HandleFunc("POST /api/v1/maintenance/retention", s.retention)
+	mux.HandleFunc("POST /api/v1/agent/enroll", s.agentEnroll)
 	mux.HandleFunc("POST /api/v1/agent/heartbeat", s.agentHeartbeat)
 	mux.HandleFunc("GET /api/v1/agent/tasks", s.agentLease)
+	mux.HandleFunc("POST /api/v1/agent/tasks/{id}/progress", s.jobProgress)
 	mux.HandleFunc("POST /api/v1/agent/tasks/{id}/complete", s.agentComplete)
 	return s.wrap(mux)
 }
@@ -404,7 +432,7 @@ func (s *Server) listConnectors(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.Store.ListConnectors(r.Context(), p.Organization.OrganizationID)
+	items, err := s.Store.ListConnectors(r.Context(), p.Organization.OrganizationID, r.URL.Query().Get("site_id"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -418,10 +446,12 @@ func (s *Server) createConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name       string `json:"name"`
-		SiteID     string `json:"site_id"`
-		Adapter    string `json:"adapter"`
-		Credential string `json:"credential"`
+		Name        string `json:"name"`
+		SiteID      string `json:"site_id"`
+		Adapter     string `json:"adapter"`
+		Credential  string `json:"credential"`
+		Description string `json:"description"`
+		Deployment  string `json:"deployment_method"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, err)
@@ -431,7 +461,10 @@ func (s *Server) createConnector(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, apierr.Invalid("send a credential reference through the secret manager, not a secret value"))
 		return
 	}
-	item, err := s.Store.CreateConnector(r.Context(), p.Organization.OrganizationID, body.SiteID, body.Name, body.Adapter)
+	if body.Adapter == "" {
+		body.Adapter = "site"
+	}
+	item, err := s.Store.CreateConnector(r.Context(), p.Organization.OrganizationID, body.SiteID, body.Name, body.Adapter, body.Description, body.Deployment)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -445,14 +478,14 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	token, err := s.Store.IssueEnrollment(r.Context(), p.Organization.OrganizationID, r.PathValue("id"))
+	token, expires, err := s.Store.IssueEnrollment(r.Context(), p.Organization.OrganizationID, r.PathValue("id"), p.User.ID)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Organization.OrganizationID, p.User.ID, "connector.enrolled", "connector", r.PathValue("id"), requestID(r.Context()), map[string]string{"token": "redacted"})
-	writeJSON(w, http.StatusCreated, map[string]string{
-		"token": token, "notice": "Copy this enrollment token now. It is stored only as a hash and will not be shown again.",
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"token": token, "expires_at": expires, "notice": "Copy this enrollment token now. It is stored only as a hash, expires in 15 minutes, and works once.",
 	})
 }
 
@@ -1136,10 +1169,15 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Health string `json:"health"`
+		Health       string          `json:"health"`
+		Version      string          `json:"version"`
+		Host         json.RawMessage `json:"host"`
+		Capabilities json.RawMessage `json:"capabilities"`
 	}
 	_ = decode(r, &body)
-	if err := s.Store.Heartbeat(r.Context(), ident.OrganizationID, ident.ConnectorID, body.Health); err != nil {
+	if err := s.Store.ReportHeartbeat(r.Context(), ident.OrganizationID, ident.ConnectorID, store.HeartbeatInput{
+		Health: body.Health, Version: body.Version, Host: body.Host, Capabilities: body.Capabilities,
+	}); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -1157,6 +1195,11 @@ func (s *Server) agentLease(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if kind == "discovery" && s.Secrets != nil {
+		payload = scrubJobPayload(r.Context(), payload, func(ref string) (string, error) {
+			return s.Secrets.Resolve(r.Context(), ref)
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"found": found, "id": id, "kind": kind, "payload": payload})
 }
 
@@ -1167,15 +1210,30 @@ func (s *Server) agentComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		OK        bool              `json:"ok"`
-		Discovery adapter.Discovery `json:"discovery"`
+		OK           bool                       `json:"ok"`
+		Partial      bool                       `json:"partial"`
+		Error        string                     `json:"error"`
+		Discovery    adapter.Discovery          `json:"discovery"`
+		Observations []store.InboundObservation `json:"observations"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, err)
 		return
 	}
+	if len(body.Observations) > 0 || body.Partial || body.Error != "" {
+		if err := s.Store.CompleteDiscovery(r.Context(), ident.OrganizationID, ident.ConnectorID, r.PathValue("id"), body.Observations, body.Partial, body.Error); err == nil {
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
+	}
 	kind, connectorID, payload, err := s.Store.GetTask(r.Context(), ident.OrganizationID, r.PathValue("id"))
 	if err != nil {
+		if len(body.Observations) > 0 || !body.OK {
+			if discErr := s.Store.CompleteDiscovery(r.Context(), ident.OrganizationID, ident.ConnectorID, r.PathValue("id"), body.Observations, body.Partial, body.Error); discErr == nil {
+				writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+				return
+			}
+		}
 		writeErr(w, err)
 		return
 	}

@@ -34,7 +34,7 @@ func (s *Store) ListSites(ctx context.Context, orgID string) ([]Site, error) {
 	var out []Site
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id::text, name, location, execution_domain, lifecycle, created_at
+			SELECT id::text, name, location, execution_domain, lifecycle, latitude, longitude, created_at
 			FROM sites WHERE organization_id = $1 ORDER BY name
 		`, orgID)
 		if err != nil {
@@ -43,7 +43,7 @@ func (s *Store) ListSites(ctx context.Context, orgID string) ([]Site, error) {
 		defer rows.Close()
 		for rows.Next() {
 			var site Site
-			if err := rows.Scan(&site.ID, &site.Name, &site.Location, &site.ExecutionDomain, &site.Lifecycle, &site.CreatedAt); err != nil {
+			if err := rows.Scan(&site.ID, &site.Name, &site.Location, &site.ExecutionDomain, &site.Lifecycle, &site.Latitude, &site.Longitude, &site.CreatedAt); err != nil {
 				return err
 			}
 			out = append(out, site)
@@ -65,8 +65,8 @@ func (s *Store) CreateSite(ctx context.Context, orgID, name, location, domain st
 		return tx.QueryRow(ctx, `
 			INSERT INTO sites (organization_id, name, location, execution_domain)
 			VALUES ($1, $2, $3, $4)
-			RETURNING id::text, name, location, execution_domain, lifecycle, created_at
-		`, orgID, name, location, domain).Scan(&site.ID, &site.Name, &site.Location, &site.ExecutionDomain, &site.Lifecycle, &site.CreatedAt)
+			RETURNING id::text, name, location, execution_domain, lifecycle, latitude, longitude, created_at
+		`, orgID, name, location, domain).Scan(&site.ID, &site.Name, &site.Location, &site.ExecutionDomain, &site.Lifecycle, &site.Latitude, &site.Longitude, &site.CreatedAt)
 	})
 	return site, mapDB(err, "site")
 }
@@ -77,14 +77,22 @@ func supportFor(adapterName string) string {
 		return "demo"
 	case "ovn":
 		return "implemented_unverified"
+	case "site":
+		return "implemented"
 	default:
 		return "not_implemented"
 	}
 }
 
-func (s *Store) CreateConnector(ctx context.Context, orgID, siteID, name, adapterName string) (Connector, error) {
-	if adapterName != "simulator" && adapterName != "ovn" {
+func (s *Store) CreateConnector(ctx context.Context, orgID, siteID, name, adapterName, description, deployment string) (Connector, error) {
+	if adapterName != "simulator" && adapterName != "ovn" && adapterName != "site" {
 		return Connector{}, apierr.Unsupported(adapterName + " is on the roadmap and cannot be enrolled")
+	}
+	if deployment != "" && deployment != "docker" && deployment != "linux" && deployment != "compose" {
+		return Connector{}, apierr.Invalid("deployment method must be docker, linux, or compose")
+	}
+	if adapterName == "site" && deployment == "" {
+		deployment = "docker"
 	}
 	var conn Connector
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
@@ -97,35 +105,42 @@ func (s *Store) CreateConnector(ctx context.Context, orgID, siteID, name, adapte
 		if adapterName == "simulator" {
 			mode = "inprocess"
 		}
-		return tx.QueryRow(ctx, `
+		row := tx.QueryRow(ctx, `
 			INSERT INTO connectors (
-				id, organization_id, site_id, name, adapter, execution_mode, credential_ref, support_status, health
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unknown')
-			RETURNING id::text, site_id::text, name, adapter, version, lifecycle, health, execution_mode,
-			          last_heartbeat_at, credential_ref, support_status, created_at
-		`, id, orgID, siteID, name, adapterName, mode, ref, supportFor(adapterName)).Scan(
-			&conn.ID, &conn.SiteID, &conn.Name, &conn.Adapter, &conn.Version, &conn.Lifecycle, &conn.Health,
-			&conn.ExecutionMode, &conn.LastHeartbeat, &conn.CredentialRef, &conn.SupportStatus, &conn.CreatedAt,
-		)
+				id, organization_id, site_id, name, adapter, execution_mode, credential_ref, support_status, health,
+				description, deployment_method, status
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unknown', $9, $10, 'not_enrolled')
+			RETURNING `+connectorReturning+`
+		`, id, orgID, siteID, name, adapterName, mode, ref, supportFor(adapterName), description, deployment)
+		return scanConnector(row, &conn)
 	})
 	return conn, mapDB(err, "connector")
 }
 
-func (s *Store) ListConnectors(ctx context.Context, orgID string) ([]Connector, error) {
+const connectorReturning = `
+	id::text, site_id::text, name, adapter, version, lifecycle, health, execution_mode,
+	last_heartbeat_at, credential_ref, support_status, created_at,
+	description, deployment_method, status, host_info, capabilities, enrolled_at, revoked_at,
+	EXISTS (SELECT 1 FROM connector_tokens t WHERE t.connector_id = connectors.id AND t.revoked_at IS NULL)
+`
+
+func (s *Store) ListConnectors(ctx context.Context, orgID, siteID string) ([]Connector, error) {
 	var out []Connector
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id::text, site_id::text, name, adapter, version, lifecycle, health, execution_mode,
-			       last_heartbeat_at, credential_ref, support_status, created_at
-			FROM connectors WHERE organization_id = $1 ORDER BY name
-		`, orgID)
+			SELECT `+connectorReturning+`
+			FROM connectors
+			WHERE organization_id = $1 AND lifecycle <> 'archived'
+			  AND ($2 = '' OR site_id::text = $2)
+			ORDER BY name
+		`, orgID, siteID)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			item, err := scanConnector(rows)
-			if err != nil {
+			var item Connector
+			if err := scanConnector(rows, &item); err != nil {
 				return err
 			}
 			out = append(out, item)
@@ -138,34 +153,89 @@ func (s *Store) ListConnectors(ctx context.Context, orgID string) ([]Connector, 
 	return out, err
 }
 
-func scanConnector(row interface{ Scan(...any) error }) (Connector, error) {
-	var conn Connector
+func scanConnector(row interface{ Scan(...any) error }, conn *Connector) error {
+	var host, caps []byte
 	err := row.Scan(
 		&conn.ID, &conn.SiteID, &conn.Name, &conn.Adapter, &conn.Version, &conn.Lifecycle, &conn.Health,
 		&conn.ExecutionMode, &conn.LastHeartbeat, &conn.CredentialRef, &conn.SupportStatus, &conn.CreatedAt,
+		&conn.Description, &conn.DeploymentMethod, &conn.Status, &host, &caps, &conn.EnrolledAt, &conn.RevokedAt,
+		&conn.Enrolled,
 	)
-	return conn, err
+	if err != nil {
+		return err
+	}
+	if len(host) == 0 {
+		host = []byte("{}")
+	}
+	if len(caps) == 0 {
+		caps = []byte("[]")
+	}
+	conn.HostInfo = host
+	conn.Capabilities = caps
+	conn.Status = effectiveConnectorStatus(conn.Status, conn.RevokedAt, conn.LastHeartbeat, conn.Enrolled)
+	return nil
 }
 
-func (s *Store) IssueEnrollment(ctx context.Context, orgID, connectorID string) (string, error) {
+func effectiveConnectorStatus(status string, revoked, last *time.Time, enrolled bool) string {
+	if revoked != nil || status == "revoked" {
+		return "revoked"
+	}
+	if last != nil && time.Since(*last) <= 90*time.Second {
+		if status == "degraded" {
+			return "degraded"
+		}
+		return "online"
+	}
+	if last != nil {
+		return "offline"
+	}
+	if status == "connecting" || enrolled {
+		return "connecting"
+	}
+	return "not_enrolled"
+}
+
+func (s *Store) IssueEnrollment(ctx context.Context, orgID, connectorID, userID string) (string, time.Time, error) {
 	token, err := authn.NewToken()
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
+	expires := time.Now().Add(15 * time.Minute)
 	err = s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT true FROM connectors WHERE organization_id = $1 AND id = $2`, orgID, connectorID).Scan(&exists); err != nil {
+		var lifecycle string
+		if err := tx.QueryRow(ctx, `SELECT lifecycle FROM connectors WHERE organization_id = $1 AND id = $2`, orgID, connectorID).Scan(&lifecycle); err != nil {
 			return mapDB(err, "connector")
 		}
+		if lifecycle != "active" {
+			return apierr.Conflict("revoked", "this connector is not active")
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE enrollment_tokens SET used_at = now()
+			WHERE organization_id = $1 AND connector_id = $2 AND used_at IS NULL
+		`, orgID, connectorID); err != nil {
+			return err
+		}
+		var created any
+		if userID != "" {
+			created = userID
+		}
 		_, err := tx.Exec(ctx, `
-			INSERT INTO connector_tokens (organization_id, connector_id, token_hash) VALUES ($1, $2, $3)
-		`, orgID, connectorID, authn.Hash(token))
+			INSERT INTO enrollment_tokens (organization_id, connector_id, token_hash, expires_at, created_by)
+			VALUES ($1, $2, $3, $4, $5)
+		`, orgID, connectorID, authn.Hash(token), expires, created)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE connectors SET status = 'connecting'
+			WHERE organization_id = $1 AND id = $2 AND status = 'not_enrolled' AND revoked_at IS NULL
+		`, orgID, connectorID)
 		return err
 	})
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
-	return token, nil
+	return token, expires, nil
 }
 
 type AgentIdentity struct {
@@ -178,26 +248,56 @@ type AgentIdentity struct {
 func (s *Store) AgentFromToken(ctx context.Context, token string) (AgentIdentity, error) {
 	var ident AgentIdentity
 	err := s.WithBypass(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
+		err := tx.QueryRow(ctx, `
 			SELECT c.organization_id::text, c.id::text, c.site_id::text, c.adapter
 			FROM connector_tokens t
 			JOIN connectors c ON c.id = t.connector_id
-			WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND c.lifecycle = 'active'
+			WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND c.lifecycle = 'active' AND c.revoked_at IS NULL
 		`, authn.Hash(token)).Scan(&ident.OrganizationID, &ident.ConnectorID, &ident.SiteID, &ident.Adapter)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE connector_tokens SET last_used_at = now() WHERE token_hash = $1`, authn.Hash(token))
+		return err
 	})
 	return ident, mapDB(err, "connector token")
 }
 
+type HeartbeatInput struct {
+	Health       string
+	Version      string
+	Host         []byte
+	Capabilities []byte
+}
+
 func (s *Store) Heartbeat(ctx context.Context, orgID, connectorID, health string) error {
+	return s.ReportHeartbeat(ctx, orgID, connectorID, HeartbeatInput{Health: health})
+}
+
+func (s *Store) ReportHeartbeat(ctx context.Context, orgID, connectorID string, in HeartbeatInput) error {
+	health := in.Health
 	if health == "" {
 		health = "healthy"
+	}
+	status := "online"
+	if health == "degraded" {
+		status = "degraded"
+	}
+	if len(in.Host) == 0 {
+		in.Host = []byte("{}")
+	}
+	if len(in.Capabilities) == 0 {
+		in.Capabilities = []byte("[]")
 	}
 	return s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
 			UPDATE connectors
-			SET health = $3, last_heartbeat_at = now(), execution_mode = 'site_agent'
-			WHERE organization_id = $1 AND id = $2
-		`, orgID, connectorID, health)
+			SET health = $3, status = $4, last_heartbeat_at = now(), execution_mode = 'site_agent',
+			    version = CASE WHEN $5 = '' THEN version ELSE $5 END,
+			    host_info = $6::jsonb,
+			    capabilities = CASE WHEN $7::jsonb = '[]'::jsonb THEN capabilities ELSE $7::jsonb END
+			WHERE organization_id = $1 AND id = $2 AND revoked_at IS NULL AND lifecycle = 'active'
+		`, orgID, connectorID, health, status, in.Version, in.Host, in.Capabilities)
 		if err != nil {
 			return err
 		}
@@ -212,13 +312,10 @@ func (s *Store) GetConnector(ctx context.Context, orgID, id string) (Connector, 
 	var conn Connector
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		row := tx.QueryRow(ctx, `
-			SELECT id::text, site_id::text, name, adapter, version, lifecycle, health, execution_mode,
-			       last_heartbeat_at, credential_ref, support_status, created_at
+			SELECT `+connectorReturning+`
 			FROM connectors WHERE organization_id = $1 AND id = $2
 		`, orgID, id)
-		var err error
-		conn, err = scanConnector(row)
-		return mapDB(err, "connector")
+		return mapDB(scanConnector(row, &conn), "connector")
 	})
 	return conn, err
 }
@@ -329,7 +426,8 @@ func (s *Store) PersistDiscovery(ctx context.Context, orgID, siteID, connectorID
 const deviceSelect = `
 	SELECT id::text, site_id::text, COALESCE(connector_id::text, ''), name, model, os_version, role,
 	       management_endpoint, lifecycle, health, data_origin, support_note, observed_at, created_at,
-	       fail_next_write, fail_next_rollback, uncertain_next_write, uncertain_committed
+	       fail_next_write, fail_next_rollback, uncertain_next_write, uncertain_committed,
+	       hostname, mac, vendor, serial, identity_key, first_seen_at, last_seen_at, discovery_source, locked_fields
 	FROM devices`
 
 func scanDevice(row interface{ Scan(...any) error }) (Device, error) {
@@ -338,7 +436,11 @@ func scanDevice(row interface{ Scan(...any) error }) (Device, error) {
 		&d.ID, &d.SiteID, &d.ConnectorID, &d.Name, &d.Model, &d.OSVersion, &d.Role,
 		&d.ManagementEndpoint, &d.Lifecycle, &d.Health, &d.DataOrigin, &d.SupportNote, &d.ObservedAt, &d.CreatedAt,
 		&d.FailNextWrite, &d.FailNextRollback, &d.UncertainNextWrite, &d.UncertainCommitted,
+		&d.Hostname, &d.MAC, &d.Vendor, &d.Serial, &d.IdentityKey, &d.FirstSeen, &d.LastSeen, &d.DiscoverySource, &d.LockedFields,
 	)
+	if d.LockedFields == nil {
+		d.LockedFields = []string{}
+	}
 	return d, err
 }
 

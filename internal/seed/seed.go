@@ -62,14 +62,14 @@ func Run(ctx context.Context, st *store.Store, password string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := st.CreateConnector(ctx, demoID, riyadh.ID, "riyadh-simulator", "simulator")
+	conn, err := st.CreateConnector(ctx, demoID, riyadh.ID, "riyadh-simulator", "simulator", "", "")
 	if err != nil {
 		return err
 	}
 	if _, err := st.PersistDiscovery(ctx, demoID, riyadh.ID, conn.ID, adapter.SimulatorDiscovery(riyadh.Name)); err != nil {
 		return err
 	}
-	otherConn, err := st.CreateConnector(ctx, otherID, private.ID, "private-simulator", "simulator")
+	otherConn, err := st.CreateConnector(ctx, otherID, private.ID, "private-simulator", "simulator", "", "")
 	if err != nil {
 		return err
 	}
