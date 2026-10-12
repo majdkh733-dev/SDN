@@ -11,6 +11,7 @@ import { CallbackPage, LoginPage } from "./pages/login";
 import { AssurancePage, AuditPage, ControllersPage, FabricPage, IntegrationsPage, SettingsPage } from "./pages/operate";
 import { CredentialsPage, DiagnosticsPage, DriftPage, EndpointsPage, GroupsPage, IncidentsPage, InterfacesPage, ProvisionPage, ReportsPage, SubnetsPage, UnsupportedPage, VlansPage } from "./pages/platform";
 import { PoliciesPage } from "./pages/policies";
+import { ReferenceTopologyPage } from "./pages/reference-topology";
 import { SitesPage } from "./pages/sites";
 import { useUI } from "./session";
 import { SidebarNav } from "./sidebar";
@@ -71,7 +72,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Shell />}>
         <Route path="/" element={<CommandPage />} />
-        <Route path="/topology" element={<CommandPage initialView="network" />} />
+        <Route path="/topology" element={<ReferenceTopologyPage />} />
         <Route path="/sites" element={<SitesPage />} />
         <Route path="/connectors" element={<ConnectorsPage />} />
         <Route path="/connectors/:id" element={<ConnectorPage />} />

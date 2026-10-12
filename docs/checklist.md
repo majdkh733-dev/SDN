@@ -81,3 +81,10 @@ Status reflects the code in this repository, not a production deployment.
 - [ ] SSH, NETCONF, RESTCONF, gNMI, SNMPv3, and vendor configuration write
 - [ ] Historical availability, flow telemetry, and firmware lifecycle data
 - [ ] Live switch lab for the VLAN workflow
+
+## Reference topology
+
+- [x] UTEC draw.io source recovered from the PNG `mxfile` chunk and rendered with the diagrams.net viewer and its stencil files
+- [x] Device and link selection, inventory binding, and saved diagram versions (`TestTopologyDiagramBindingIsolation`)
+- [ ] Stylized logo text for SS and Al Kharj is artwork, not a separate text cell; OCR did not read those two wordmarks reliably
+- [ ] Reference symbols are not pre-bound to inventory devices
