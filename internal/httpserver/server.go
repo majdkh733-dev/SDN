@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/topology-diagram/versions", s.topologyDiagramVersions)
 	mux.HandleFunc("GET /api/v1/topology-diagram/versions/{id}", s.topologyDiagramVersion)
 	mux.HandleFunc("POST /api/v1/topology-diagram/bindings", s.setTopologyBinding)
+	mux.HandleFunc("POST /api/v1/topology-diagram/links", s.setTopologyLink)
 	mux.HandleFunc("GET /api/v1/fabrics", s.listFabrics)
 	mux.HandleFunc("POST /api/v1/fabrics", s.createFabric)
 	mux.HandleFunc("GET /api/v1/tenants", s.listTenants)

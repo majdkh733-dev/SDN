@@ -84,4 +84,40 @@ func TestTopologyDiagramBindingIsolation(t *testing.T) {
 	if rows, ok := other["bindings"].([]any); ok && len(rows) != 0 {
 		t.Fatalf("isolated bindings %#v", rows)
 	}
+	if rows, ok := other["link_bindings"].([]any); ok && len(rows) != 0 {
+		t.Fatalf("isolated links %#v", rows)
+	}
+	res = do(t, eng, http.MethodPost, ts.URL+"/api/v1/topology-diagram/bindings", map[string]any{"cell_id": "symbol-2", "device_id": devices[0]["id"]})
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("duplicate status %d", res.StatusCode)
+	}
+	res.Body.Close()
+	var ifaces []map[string]any
+	getJSON(t, eng, ts.URL+"/api/v1/devices/"+devices[0]["id"].(string)+"/interfaces", &ifaces)
+	var otherIfaces []map[string]any
+	getJSON(t, eng, ts.URL+"/api/v1/devices/"+devices[1]["id"].(string)+"/interfaces", &otherIfaces)
+	if len(ifaces) == 0 || len(otherIfaces) == 0 {
+		t.Fatal("fixture devices have no interfaces")
+	}
+	res = do(t, viewer, http.MethodPost, ts.URL+"/api/v1/topology-diagram/links", map[string]any{
+		"cell_id": "edge-1", "source_device_id": devices[0]["id"], "source_interface_id": ifaces[0]["id"],
+	})
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer link status %d", res.StatusCode)
+	}
+	res.Body.Close()
+	postJSON(t, eng, ts.URL+"/api/v1/topology-diagram/links", map[string]any{
+		"cell_id": "edge-1", "connection_type": "physical", "evidence": "manual",
+		"source_device_id": devices[0]["id"], "source_interface_id": ifaces[0]["id"],
+		"target_device_id": devices[1]["id"], "target_interface_id": otherIfaces[0]["id"],
+	}, http.StatusOK, nil)
+	getJSON(t, eng, ts.URL+"/api/v1/topology-diagram", &current)
+	links, _ := current["link_bindings"].([]any)
+	if len(links) != 1 {
+		t.Fatalf("links %#v", current["link_bindings"])
+	}
+	getJSON(t, iso, ts.URL+"/api/v1/topology-diagram", &other)
+	if rows, ok := other["link_bindings"].([]any); ok && len(rows) != 0 {
+		t.Fatalf("isolated links after map %#v", rows)
+	}
 }

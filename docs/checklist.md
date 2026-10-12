@@ -85,6 +85,7 @@ Status reflects the code in this repository, not a production deployment.
 ## Reference topology
 
 - [x] UTEC draw.io source recovered from the PNG `mxfile` chunk and rendered with the diagrams.net viewer and its stencil files
-- [x] Device and link selection, inventory binding, and saved diagram versions (`TestTopologyDiagramBindingIsolation`)
+- [x] Command Room and Topology share that diagram, its saved version, and its bindings
+- [x] Device and link selection, inventory binding, link-to-interface mapping, and saved diagram versions (`TestTopologyDiagramBindingIsolation`)
 - [ ] Stylized logo text for SS and Al Kharj is artwork, not a separate text cell; OCR did not read those two wordmarks reliably
-- [ ] Reference symbols are not pre-bound to inventory devices
+- [ ] Reference symbols are not pre-bound to the UTEC network. Demo inventory can be linked manually; that is not live UTEC telemetry

@@ -219,6 +219,10 @@ html[data-theme="dark"] .badge { background: transparent; }
 .ref-toolbar h1 { margin: 0; font-size: 22px; }
 .ref-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 12px; min-height: 0; }
 .ref-canvas-wrap { background: #fff; border: 1px solid #111; min-height: 70vh; height: 74vh; overflow: hidden; }
+.ref-topology.embedded .ref-canvas-wrap { height: 64vh; min-height: 520px; }
+.map-table-wrap { max-height: 320px; overflow: auto; margin-top: 8px; }
+.map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.map-table th, .map-table td { border-bottom: 1px solid var(--line); text-align: start; padding: 6px 8px; vertical-align: top; }
 @font-face {
   font-family: "Architects Daughter";
   src: url("/drawio/fonts/ArchitectsDaughter-Regular.ttf") format("truetype");

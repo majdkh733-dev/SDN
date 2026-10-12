@@ -26,15 +26,23 @@ func (s *Server) topologyDiagram(w http.ResponseWriter, r *http.Request) {
 	if bindings == nil {
 		bindings = []store.SymbolBinding{}
 	}
+	links, err := s.Store.ListLinkBindings(r.Context(), org)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if links == nil {
+		links = []store.LinkBinding{}
+	}
 	if !found {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"source": "reference", "name": store.ReferenceDiagramName, "bindings": bindings,
+			"source": "reference", "name": store.ReferenceDiagramName, "bindings": bindings, "link_bindings": links,
 		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"source": "saved", "name": item.Name, "version_id": item.ID, "updated_at": item.CreatedAt,
-		"updated_by": item.CreatedBy, "mxfile": item.MXFile, "bindings": bindings,
+		"updated_by": item.CreatedBy, "mxfile": item.MXFile, "bindings": bindings, "link_bindings": links,
 	})
 }
 
@@ -105,4 +113,21 @@ func (s *Server) setTopologyBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"cell_id": body.CellID, "device_id": body.DeviceID})
+}
+
+func (s *Server) setTopologyLink(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.require(w, r, domain.CanAuthor)
+	if !ok {
+		return
+	}
+	var body store.LinkBinding
+	if err := decode(r, &body); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.Store.SetLinkBinding(r.Context(), p.Organization.OrganizationID, p.User.ID, body); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
 }

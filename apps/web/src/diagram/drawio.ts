@@ -1,3 +1,4 @@
+import { classifySymbol, type SymbolKind } from "./classify";
 import { plainLabel } from "./regions";
 
 export type ViewBox = { x: number; y: number; w: number; h: number };
@@ -29,8 +30,9 @@ export type DiagramHandle = {
   undo: () => void;
   redo: () => void;
   serialize: () => string;
-  placeDevice: (label: string, style: string, width: number, height: number) => string;
+  placeDevice: (label: string, style: string, width: number, height: number, dx?: number, dy?: number) => string;
   setLabel: (id: string, label: string) => void;
+  symbols: () => (CellInfo & { symbolKind: SymbolKind })[];
 };
 
 type MxWindow = Window & {
@@ -78,6 +80,9 @@ type MxGraph = {
   setCellsResizable: (on: boolean) => void;
   setConnectable: (on: boolean) => void;
   setCellsEditable: (on: boolean) => void;
+  setCellsBendable: (on: boolean) => void;
+  setCellsDeletable: (on: boolean) => void;
+  setDisconnectOnMove: (on: boolean) => void;
   setPanning: (on: boolean) => void;
   setSelectionCell: (cell: MxCell | null) => void;
   getSelectionCell: () => MxCell | null;
@@ -184,6 +189,9 @@ export async function mountDiagram(container: HTMLElement, xml: string, onSelect
     graph.setCellsResizable(editing);
     graph.setConnectable(editing);
     graph.setCellsEditable(editing);
+    graph.setCellsBendable(editing);
+    graph.setCellsDeletable(editing);
+    graph.setDisconnectOnMove(false);
     graph.setPanning(false);
   };
   applyEdit();
@@ -340,18 +348,25 @@ export async function mountDiagram(container: HTMLElement, xml: string, onSelect
       if (current?.parentNode) current.parentNode.replaceChild(next.importNode(encoded, true), current);
       return w.mxUtils!.getXml(next.documentElement);
     },
-    placeDevice: (label, style, width, height) => {
+    placeDevice: (label, style, width, height, dx = 0, dy = 0) => {
       const parent = graph.getDefaultParent();
       graph.getModel().beginUpdate();
       let cell: MxCell;
       try {
-        cell = graph.insertVertex(parent, null, label, view.x + view.w / 2, view.y + view.h / 2, width, height, style);
+        cell = graph.insertVertex(parent, null, label, view.x + view.w / 2 + dx, view.y + view.h / 2 + dy, width, height, style);
       } finally {
         graph.getModel().endUpdate();
       }
       graph.setSelectionCell(cell);
       return cell.getId();
     },
+    symbols: () => cells().flatMap((cell) => {
+      if (!cell.getId || cell.getId() === "0" || cell.getId() === "1") return [];
+      const info = describe(cell);
+      if (!info || (info.kind === "vertex" && !cell.isVertex())) return [];
+      if (!cell.isVertex() && !cell.isEdge()) return [];
+      return [{ ...info, symbolKind: classifySymbol({ vertex: cell.isVertex(), style: info.style, label: info.label, width: info.width, height: info.height }) }];
+    }),
     setLabel: (id, label) => {
       const cell = graph.getModel().getCell(id);
       if (!cell) return;
