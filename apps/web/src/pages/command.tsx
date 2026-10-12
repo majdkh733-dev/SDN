@@ -211,6 +211,9 @@ export function CommandPage({ initialView = "sites" }: { initialView?: string })
                   <p className="note">{device.data.device.support_note}</p>
                   <Link to={`/inventory/devices/${device.data.device.id}`}>{t("openDevice")}</Link>
                   <Link to={`/policies?site=${device.data.device.site_id}&device=${device.data.device.id}`}>{t("openPolicy")}</Link>
+                  <Link to={`/provisioning?site=${device.data.device.site_id}&device=${device.data.device.id}`}>{t("provisioning")}</Link>
+                  <Link to="/drift">{t("drift")}</Link>
+                  <Link to="/diagnostics">{t("diagnostics")}</Link>
                 </dl>
               ) : null}
               {tab === "interfaces" ? (

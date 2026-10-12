@@ -70,3 +70,14 @@ Status reflects the code in this repository, not a production deployment.
 - [x] Command Room topology, incidents, and Policy Studio scope handoff
 - [x] Connector lifecycle test (`TestConnectorDiscoveryLifecycle`) and agent probe test
 - [ ] Physical device or vendor API collection outside this environment
+
+## Operations platform
+
+- [x] Default navigation matches the operations groups, and older saved trees keep custom order while gaining missing pages
+- [x] Adapter support matrix (`GET /api/v1/adapters`)
+- [x] Simulator VLAN change: baseline check, approval, verify, rollback row delete, and later config drift (`TestVLANChangeVerifyAndDrift`)
+- [x] Service account token issue and revocation
+- [x] Connector ping and DNS diagnostics queued as agent tasks
+- [ ] SSH, NETCONF, RESTCONF, gNMI, SNMPv3, and vendor configuration write
+- [ ] Historical availability, flow telemetry, and firmware lifecycle data
+- [ ] Live switch lab for the VLAN workflow
