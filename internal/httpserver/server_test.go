@@ -228,22 +228,40 @@ func TestSiteAgentDiscover(t *testing.T) {
 	if enrolled["token"] == "" {
 		t.Fatal("missing enrollment token")
 	}
+	var credential struct {
+		Data struct {
+			Credential string `json:"credential"`
+		} `json:"data"`
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/agent/enroll", bytes.NewReader([]byte(`{"enrollment_token":"`+enrolled["token"]+`","version":"test"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewDecoder(res.Body).Decode(&credential); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated || credential.Data.Credential == "" {
+		t.Fatalf("enroll status %d", res.StatusCode)
+	}
 	var queued map[string]any
 	postJSON(t, admin, ts.URL+"/api/v1/connectors/"+conn["id"].(string)+"/discover?via=agent", map[string]any{}, http.StatusAccepted, &queued)
 	if queued["task_id"] == "" {
 		t.Fatal("task was not queued")
 	}
 	agent := &http.Client{}
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/agent/heartbeat", bytes.NewReader([]byte(`{"health":"healthy"}`)))
-	req.Header.Set("Authorization", "Bearer "+enrolled["token"])
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/agent/heartbeat", bytes.NewReader([]byte(`{"health":"healthy"}`)))
+	req.Header.Set("Authorization", "Bearer "+credential.Data.Credential)
 	req.Header.Set("Content-Type", "application/json")
-	res, err := agent.Do(req)
+	res, err = agent.Do(req)
 	if err != nil || res.StatusCode != http.StatusOK {
 		t.Fatalf("heartbeat %v %v", res, err)
 	}
 	res.Body.Close()
 	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/v1/agent/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+enrolled["token"])
+	req.Header.Set("Authorization", "Bearer "+credential.Data.Credential)
 	res, err = agent.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +295,7 @@ func TestSiteAgentDiscover(t *testing.T) {
 	}}
 	raw, _ := json.Marshal(body)
 	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/v1/agent/tasks/"+leased.Data.ID+"/complete", bytes.NewReader(raw))
-	req.Header.Set("Authorization", "Bearer "+enrolled["token"])
+	req.Header.Set("Authorization", "Bearer "+credential.Data.Credential)
 	req.Header.Set("Content-Type", "application/json")
 	res, err = agent.Do(req)
 	if err != nil || res.StatusCode != http.StatusOK {

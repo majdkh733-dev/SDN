@@ -62,6 +62,9 @@ func main() {
 		if err := st.Beat(ctx, id, "workflow"); err != nil {
 			slog.Error("heartbeat", "err", err)
 		}
+		if _, err := st.EnqueueDueScans(ctx); err != nil {
+			slog.Error("discovery schedule", "err", err)
+		}
 		claimed, err := st.ClaimedChanges(ctx)
 		if err != nil {
 			slog.Error("claim", "err", err)

@@ -137,22 +137,32 @@ type Site struct {
 	Location        string    `json:"location"`
 	ExecutionDomain string    `json:"execution_domain"`
 	Lifecycle       string    `json:"lifecycle"`
+	Latitude        *float64  `json:"latitude,omitempty"`
+	Longitude       *float64  `json:"longitude,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
 type Connector struct {
-	ID            string     `json:"id"`
-	SiteID        string     `json:"site_id"`
-	Name          string     `json:"name"`
-	Adapter       string     `json:"adapter"`
-	Version       string     `json:"version"`
-	Lifecycle     string     `json:"lifecycle"`
-	Health        string     `json:"health"`
-	ExecutionMode string     `json:"execution_mode"`
-	LastHeartbeat *time.Time `json:"last_heartbeat_at"`
-	CredentialRef string     `json:"credential_ref"`
-	SupportStatus string     `json:"support_status"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID               string          `json:"id"`
+	SiteID           string          `json:"site_id"`
+	Name             string          `json:"name"`
+	Adapter          string          `json:"adapter"`
+	Version          string          `json:"version"`
+	Lifecycle        string          `json:"lifecycle"`
+	Health           string          `json:"health"`
+	ExecutionMode    string          `json:"execution_mode"`
+	LastHeartbeat    *time.Time      `json:"last_heartbeat_at"`
+	CredentialRef    string          `json:"credential_ref"`
+	SupportStatus    string          `json:"support_status"`
+	CreatedAt        time.Time       `json:"created_at"`
+	Description      string          `json:"description"`
+	DeploymentMethod string          `json:"deployment_method"`
+	Status           string          `json:"status"`
+	HostInfo         json.RawMessage `json:"host_info"`
+	Capabilities     json.RawMessage `json:"capabilities"`
+	EnrolledAt       *time.Time      `json:"enrolled_at"`
+	RevokedAt        *time.Time      `json:"revoked_at"`
+	Enrolled         bool            `json:"enrolled"`
 }
 
 type Device struct {
@@ -174,6 +184,15 @@ type Device struct {
 	FailNextRollback   bool       `json:"-"`
 	UncertainNextWrite bool       `json:"-"`
 	UncertainCommitted bool       `json:"-"`
+	Hostname           string     `json:"hostname"`
+	MAC                string     `json:"mac"`
+	Vendor             string     `json:"vendor"`
+	Serial             string     `json:"serial"`
+	IdentityKey        string     `json:"identity_key"`
+	FirstSeen          *time.Time `json:"first_seen_at"`
+	LastSeen           *time.Time `json:"last_seen_at"`
+	DiscoverySource    string     `json:"discovery_source"`
+	LockedFields       []string   `json:"locked_fields"`
 }
 
 type Interface struct {

@@ -74,18 +74,28 @@ func (s *Store) ListAudit(ctx context.Context, orgID, action string) ([]AuditEve
 }
 
 type Summary struct {
-	Organization      string `json:"organization"`
-	Sites             int    `json:"sites"`
-	Devices           int    `json:"devices"`
-	OpenDrift         int    `json:"open_drift"`
-	ActiveChanges     int    `json:"active_changes"`
-	ConnectorsHealthy int    `json:"connectors_healthy"`
-	ConnectorsTotal   int    `json:"connectors_total"`
-	Notice            string `json:"notice"`
+	Organization          string `json:"organization"`
+	Sites                 int    `json:"sites"`
+	Devices               int    `json:"devices"`
+	OpenDrift             int    `json:"open_drift"`
+	ActiveChanges         int    `json:"active_changes"`
+	ConnectorsHealthy     int    `json:"connectors_healthy"`
+	ConnectorsTotal       int    `json:"connectors_total"`
+	Notice                string `json:"notice"`
+	WorkloadsAvailable    bool   `json:"workloads_available"`
+	WorkloadsNote         string `json:"workloads_note"`
+	AvailabilityAvailable bool   `json:"availability_available"`
+	AvailabilityNote      string `json:"availability_note"`
+	Alerts                int    `json:"alerts"`
 }
 
 func (s *Store) Summary(ctx context.Context, orgID, orgName string) (Summary, error) {
-	sum := Summary{Organization: orgName, Notice: "Demonstration inventory is produced by the simulator unless a site agent reports an OVN lab."}
+	sum := Summary{
+		Organization: orgName, Notice: "Demonstration inventory is produced by the simulator unless a site agent reports an observation. Connector status is separate from device status.",
+		WorkloadsNote:    "Workload collection is not implemented. No count is shown.",
+		AvailabilityNote: "Availability history is not collected. No percentage is shown.",
+	}
+	var offline int
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT
@@ -93,10 +103,12 @@ func (s *Store) Summary(ctx context.Context, orgID, orgName string) (Summary, er
 				(SELECT COUNT(*) FROM devices WHERE organization_id = $1 AND lifecycle = 'active'),
 				(SELECT COUNT(*) FROM drift_findings WHERE organization_id = $1 AND disposition = 'open'),
 				(SELECT COUNT(*) FROM change_requests WHERE organization_id = $1 AND status IN ('validated','approved','queued','applying','verifying','partial','compensating','unknown')),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND health = 'healthy'),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1)
-		`, orgID).Scan(&sum.Sites, &sum.Devices, &sum.OpenDrift, &sum.ActiveChanges, &sum.ConnectorsHealthy, &sum.ConnectorsTotal)
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND health = 'healthy' AND lifecycle = 'active'),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND lifecycle <> 'archived'),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND lifecycle = 'active' AND revoked_at IS NULL AND last_heartbeat_at IS NOT NULL AND last_heartbeat_at < now() - interval '90 seconds')
+		`, orgID).Scan(&sum.Sites, &sum.Devices, &sum.OpenDrift, &sum.ActiveChanges, &sum.ConnectorsHealthy, &sum.ConnectorsTotal, &offline)
 	})
+	sum.Alerts = sum.OpenDrift + offline
 	return sum, err
 }
 
@@ -110,11 +122,14 @@ type TopoNode struct {
 }
 
 type TopoEdge struct {
-	ID          string  `json:"id"`
-	Source      string  `json:"source"`
-	Target      string  `json:"target"`
-	Utilization float64 `json:"utilization_pct"`
-	Label       string  `json:"label"`
+	ID          string   `json:"id"`
+	Source      string   `json:"source"`
+	Target      string   `json:"target"`
+	Utilization float64  `json:"utilization_pct"`
+	Label       string   `json:"label"`
+	Origin      string   `json:"origin"`
+	Measured    bool     `json:"measured"`
+	LatencyMS   *float64 `json:"latency_ms,omitempty"`
 }
 
 type Topology struct {
@@ -137,7 +152,7 @@ func (s *Store) Topology(ctx context.Context, orgID, lens, siteID string) (Topol
 	default:
 		lens = "performance"
 		topo.Lens = lens
-		topo.Notice = "Link motion is a selection aid. Utilization figures are simulated and are not measured packet flow."
+		topo.Notice = "Links come from simulator blueprints, a supported discovery source, or a manual site link. Utilization and latency are omitted unless measured."
 	}
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		if lens == "application" {
@@ -161,8 +176,10 @@ func (s *Store) Topology(ctx context.Context, orgID, lens, siteID string) (Topol
 			return rows.Err()
 		}
 		rows, err := tx.Query(ctx, `
-			SELECT d.id::text, d.name, d.role, d.health, d.site_id::text, d.data_origin
+			SELECT d.id::text, d.name, d.role, d.health, d.site_id::text, d.data_origin,
+			       d.observed_at, COALESCE(c.last_heartbeat_at, 'epoch'::timestamptz), c.id IS NOT NULL
 			FROM devices d
+			LEFT JOIN connectors c ON c.id = d.connector_id
 			WHERE d.organization_id = $1 AND d.lifecycle = 'active' AND ($2 = '' OR d.site_id::text = $2)
 			ORDER BY d.name
 		`, orgID, siteID)
@@ -172,16 +189,28 @@ func (s *Store) Topology(ctx context.Context, orgID, lens, siteID string) (Topol
 		defer rows.Close()
 		for rows.Next() {
 			var id, name, role, health, site, origin string
-			if err := rows.Scan(&id, &name, &role, &health, &site, &origin); err != nil {
+			var observed, beat *time.Time
+			var hasConnector bool
+			if err := rows.Scan(&id, &name, &role, &health, &site, &origin, &observed, &beat, &hasConnector); err != nil {
 				return err
 			}
-			topo.Nodes = append(topo.Nodes, TopoNode{ID: id, Label: name, Kind: role, Health: health, SiteID: site, Meta: map[string]any{"data_origin": origin}})
+			freshness := "unknown"
+			if hasConnector && beat != nil && beat.Year() > 1970 {
+				if time.Since(*beat) <= 90*time.Second {
+					freshness = "live"
+				} else {
+					freshness = "stale"
+				}
+			}
+			topo.Nodes = append(topo.Nodes, TopoNode{ID: id, Label: name, Kind: role, Health: health, SiteID: site, Meta: map[string]any{
+				"data_origin": origin, "telemetry": freshness, "observed_at": observed,
+			}})
 		}
 		if err := rows.Err(); err != nil {
 			return err
 		}
 		erows, err := tx.Query(ctx, `
-			SELECT l.id::text, da.id::text, db.id::text, l.utilization_pct::float8, ia.name || '—' || ib.name
+			SELECT l.id::text, da.id::text, db.id::text, l.utilization_pct::float8, ia.name || '—' || ib.name, l.source
 			FROM topology_links l
 			JOIN interfaces ia ON ia.id = l.a_interface_id
 			JOIN interfaces ib ON ib.id = l.b_interface_id
@@ -195,12 +224,24 @@ func (s *Store) Topology(ctx context.Context, orgID, lens, siteID string) (Topol
 		defer erows.Close()
 		for erows.Next() {
 			var edge TopoEdge
-			if err := erows.Scan(&edge.ID, &edge.Source, &edge.Target, &edge.Utilization, &edge.Label); err != nil {
+			if err := erows.Scan(&edge.ID, &edge.Source, &edge.Target, &edge.Utilization, &edge.Label, &edge.Origin); err != nil {
 				return err
+			}
+			if edge.Origin != "measured" {
+				edge.Utilization = 0
+				edge.Measured = false
+			} else {
+				edge.Measured = true
 			}
 			topo.Edges = append(topo.Edges, edge)
 		}
-		return erows.Err()
+		if err := erows.Err(); err != nil {
+			return err
+		}
+		if siteID == "" {
+			return appendSiteNodes(ctx, tx, orgID, &topo)
+		}
+		return nil
 	})
 	return topo, err
 }
@@ -630,7 +671,15 @@ func (s *Store) LeaseTask(ctx context.Context, orgID, connectorID string) (strin
 	var payload json.RawMessage
 	found := false
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `
+		jobID, jobPayload, jobFound, err := s.leaseDiscovery(ctx, tx, orgID, connectorID)
+		if err != nil {
+			return err
+		}
+		if jobFound {
+			id, kind, payload, found = jobID, "discovery", jobPayload, true
+			return nil
+		}
+		err = tx.QueryRow(ctx, `
 			UPDATE agent_tasks SET status = 'leased', updated_at = now()
 			WHERE id = (
 				SELECT id FROM agent_tasks

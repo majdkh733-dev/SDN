@@ -60,3 +60,13 @@ Status reflects the code in this repository, not a production deployment.
 - [x] Frontend lint, typecheck, unit tests, and production build
 - [ ] Vercel deployment URL
 - [ ] Production launch (API, external OIDC, storage, connectors, and workflows verified on the target network)
+
+## Site connectors and Command Room
+
+- [x] One-time enrollment, revocable connector credential, heartbeat, and site-scoped job lease
+- [x] Docker, Compose, and Linux install paths; other platforms labeled unavailable
+- [x] Bounded local discovery (ICMP, ARP, TCP, DNS, optional SNMP) and inventory import without duplicate identity keys
+- [x] Company navigation and theme preferences
+- [x] Command Room topology, incidents, and Policy Studio scope handoff
+- [x] Connector lifecycle test (`TestConnectorDiscoveryLifecycle`) and agent probe test
+- [ ] Physical device or vendor API collection outside this environment
