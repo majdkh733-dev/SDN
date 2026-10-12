@@ -55,9 +55,14 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
   const [linkForm, setLinkForm] = useState({ sourceDevice: "", sourceInterface: "", targetDevice: "", targetInterface: "", connectionType: "documented", evidence: "manual" });
   const doc = useQuery({ queryKey: ["topology-diagram"], queryFn: () => api<DiagramDoc>("/api/v1/topology-diagram") });
   const xml = useQuery({
-    queryKey: ["topology-xml", doc.data?.source, doc.data?.version_id],
-    queryFn: async () => doc.data?.mxfile || await fetch(REFERENCE).then((res) => res.text()),
-    enabled: Boolean(doc.data),
+    queryKey: ["topology-xml", doc.data?.source, doc.data?.version_id, doc.isError],
+    queryFn: async () => {
+      if (doc.data?.mxfile) return doc.data.mxfile;
+      const response = await fetch(REFERENCE);
+      if (!response.ok) throw new Error(String(response.status));
+      return response.text();
+    },
+    enabled: doc.isFetched,
   });
   const devices = useQuery({ queryKey: ["devices"], queryFn: () => api<Device[]>("/api/v1/devices") });
   const sites = useQuery({ queryKey: ["sites"], queryFn: () => api<{ id: string; name: string }[]>("/api/v1/sites") });
@@ -220,6 +225,12 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
           {author ? <button type="button" className="secondary" aria-pressed={editing} onClick={() => setEditing((value) => !value)}>{t("editDiagram")}</button> : null}
         </div>
       </div>
+      {doc.isError ? (
+        <p className="state error" role="alert">
+          {t("diagramRequestFailed")}
+          <button type="button" className="secondary" onClick={() => void doc.refetch()}>{t("retry")}</button>
+        </p>
+      ) : null}
       {notice ? <p className="note" role="status">{notice}</p> : null}
       {editing ? (
         <div className="ref-edit">
@@ -266,7 +277,7 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
       <div className="ref-stage">
         <section className="ref-canvas-wrap" ref={stage}>
           {xml.isLoading || doc.isLoading ? <p className="state" role="status">{t("loading")}</p> : null}
-          {xml.isError || doc.isError ? <p className="state error" role="alert">{t("requestFailed")}</p> : null}
+          {xml.isError ? <p className="state error" role="alert">{t("diagramFileFailed")}</p> : null}
           <div ref={canvas} className="ref-canvas" />
         </section>
         <aside className="panel ref-drawer">

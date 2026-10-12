@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type DragEvent } from "react";
 import { NavLink } from "react-router-dom";
 import { api, can, type Principal } from "./api";
-import { addGroup, dissolveGroup, dropPage, movePage, pageRoutes, renameGroup, reparent, type NavItem } from "./nav";
+import { addGroup, defaultNavigation, dissolveGroup, dropPage, movePage, pageRoutes, renameGroup, reparent, type NavItem } from "./nav";
 import { message, useT } from "./ui";
 
 type Preferences = { navigation: { items: NavItem[] }; theme: { mode: string; preset: string } };
@@ -15,7 +15,8 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
   const [draft, setDraft] = useState<NavItem[] | null>(null);
   const [label, setLabel] = useState("");
   const [drop, setDrop] = useState<{ id: string; where: "before" | "after" | "into" } | null>(null);
-  const items = draft ?? prefs.data?.navigation.items ?? [];
+  const usingDefault = !draft && !prefs.data && prefs.isError;
+  const items = draft ?? prefs.data?.navigation.items ?? (usingDefault ? defaultNavigation() : []);
   const save = useMutation({
     mutationFn: (next: NavItem[]) => api("/api/v1/preferences/navigation", { method: "POST", body: JSON.stringify({ items: next }) }),
     onSuccess: async () => {
@@ -104,6 +105,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
   }
   return (
     <nav className="nav" aria-label={t("product")}>
+      {usingDefault ? <p className="note">{t("navFallback")}</p> : null}
       {items.map((item) => renderItem(item, 0))}
       {admin ? (
         <div className="nav-edit">

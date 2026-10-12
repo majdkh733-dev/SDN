@@ -25,9 +25,17 @@ type Incident = { id: string; severity: string; title: string; site: string; at?
 type Change = { id: string; status: string; created_at?: string; impact?: { items?: { device_id: string; device_name?: string }[] } };
 type SearchHit = { devices: { id: string; name: string }[]; sites: { id: string; name: string }[]; segments: { id: string; name: string }[]; policies: { id: string; name: string }[] };
 
+type Site = { id: string; name: string; location: string; latitude?: number; longitude?: number };
+
 export function CommandPage() {
   const t = useT();
   const [query, setQuery] = useState("");
+  const [lens, setLens] = useState<"diagram" | "geo">("diagram");
+  const sites = useQuery({
+    queryKey: ["sites"],
+    queryFn: () => api<Site[]>("/api/v1/sites"),
+    enabled: lens === "geo",
+  });
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/api/v1/command-room/summary"), refetchInterval: 15000 });
   const incidents = useQuery({ queryKey: ["incidents"], queryFn: () => api<Incident[]>("/api/v1/command-room/incidents"), refetchInterval: 15000 });
   const changes = useQuery({ queryKey: ["changes", "recent"], queryFn: () => api<Change[]>("/api/v1/changes") });
@@ -72,7 +80,14 @@ export function CommandPage() {
       </QueryState>
       <div className="command-grid">
         <section className="map-panel">
-          <ReferenceDiagram embedded />
+          <div className="page-title-row">
+            <h2>{t("topology")}</h2>
+            <div className="lenses" role="group" aria-label={t("topology")}>
+              <button type="button" className="secondary" aria-pressed={lens === "diagram"} onClick={() => setLens("diagram")}>{t("referenceTopology")}</button>
+              <button type="button" className="secondary" aria-pressed={lens === "geo"} onClick={() => setLens("geo")}>{t("geo")}</button>
+            </div>
+          </div>
+          {lens === "diagram" ? <ReferenceDiagram embedded /> : <GeographicState query={sites} />}
         </section>
         <aside className="panel rail">
           <h2 id="incidents">{t("incidents")}</h2>
@@ -106,5 +121,32 @@ export function CommandPage() {
         {(changes.data ?? []).length === 0 ? <Empty text={t("empty")} /> : null}
       </section>
     </div>
+  );
+}
+
+function GeographicState({ query }: { query: { isLoading: boolean; error: unknown; data?: Site[]; refetch: () => unknown } }) {
+  const t = useT();
+  const placed = (query.data ?? []).filter((site) => site.latitude != null && site.longitude != null);
+  return (
+    <section className="panel" aria-label={t("geo")}>
+      <QueryState loading={query.isLoading} error={query.error} onRetry={() => void query.refetch()}>
+        {placed.length === 0 ? (
+          <>
+            <Empty text={t("geoUnavailable")} />
+            <p className="note">{t("geoUnavailableNote")}</p>
+          </>
+        ) : (
+          <ul className="incident-list">
+            {placed.map((site) => (
+              <li key={site.id}>
+                <strong>{site.name}</strong>
+                <p className="note">{site.location || t("unknown")} · {site.latitude}, {site.longitude}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </QueryState>
+      <p className="note">{t("telemetryUnavailable")}</p>
+    </section>
   );
 }

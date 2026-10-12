@@ -43,6 +43,25 @@ export const pageRoutes: Record<string, { to: string; end: boolean }> = {
   settings: { to: "/settings", end: false },
 };
 
+export function defaultNavigation(): NavItem[] {
+  const groups: { id: string; label: string; pages: string[] }[] = [
+    { id: "command-room", label: "Command Room", pages: ["command"] },
+    { id: "infrastructure", label: "Network Infrastructure", pages: ["sites", "inventory", "interfaces", "endpoints", "topology", "discovery"] },
+    { id: "connectivity", label: "Networks & Connectivity", pages: ["vlans", "tenants", "subnets", "routing", "fabric", "wan"] },
+    { id: "segmentation", label: "Policies & Segmentation", pages: ["policies", "groups", "qos", "validation"] },
+    { id: "automation", label: "Automation", pages: ["templates", "provisioning", "backups", "drift", "changes", "firmware"] },
+    { id: "assurance-group", label: "Assurance", pages: ["assurance", "incidents", "telemetry", "diagnostics"] },
+    { id: "reports-group", label: "Reports & Compliance", pages: ["reports"] },
+    { id: "administration", label: "Administration", pages: ["connectors", "integrations", "credentials", "audit", "controllers", "settings"] },
+  ];
+  return groups.map((group) => ({
+    id: group.id,
+    type: "group" as const,
+    label: group.label,
+    children: group.pages.map((page) => ({ id: page, type: "page" as const, page })),
+  }));
+}
+
 function clone(items: NavItem[]): NavItem[] {
   return items.map((item) => ({ ...item, children: item.children ? clone(item.children) : undefined }));
 }
