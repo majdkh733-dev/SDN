@@ -185,12 +185,42 @@ func (s *Server) sameSite() http.SameSite {
 }
 
 func (s *Server) originAllowed(origin string) bool {
-	for _, allowed := range s.Config.AllowedOrigins {
-		if origin == allowed {
+	return originPermitted(s.Config.AllowedOrigins, s.Config.PublicAPIBase, origin)
+}
+
+func originPermitted(allowed []string, publicBase, origin string) bool {
+	for _, item := range allowed {
+		if origin == item {
 			return true
 		}
 	}
-	return origin == s.Config.PublicAPIBase
+	if origin == publicBase {
+		return true
+	}
+	return sdnConsoleOrigin(origin)
+}
+
+func sdnConsoleOrigin(origin string) bool {
+	host, ok := httpsHost(origin)
+	if !ok {
+		return false
+	}
+	if host == "sdn-psi.vercel.app" {
+		return true
+	}
+	return strings.HasPrefix(host, "sdn-git-") && strings.HasSuffix(host, "-majd-6c6d.vercel.app")
+}
+
+func httpsHost(origin string) (string, bool) {
+	const prefix = "https://"
+	if !strings.HasPrefix(origin, prefix) {
+		return "", false
+	}
+	host := strings.TrimPrefix(origin, prefix)
+	if host == "" || strings.ContainsAny(host, "/?#@") {
+		return "", false
+	}
+	return host, true
 }
 
 func (s *Server) allowedRedirect(uri string) bool {

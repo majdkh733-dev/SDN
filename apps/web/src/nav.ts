@@ -101,6 +101,61 @@ export function addGroup(items: NavItem[], label: string): NavItem[] {
   return [...items, { id, type: "group", label, children: [] }];
 }
 
+export function defaultNavigation(): NavItem[] {
+  return [
+    { id: "command-room", type: "group", label: "Command Room", children: [
+      { id: "command", type: "page", page: "command" },
+    ] },
+    { id: "infrastructure", type: "group", label: "Network Infrastructure", children: [
+      { id: "sites", type: "page", page: "sites" },
+      { id: "inventory", type: "page", page: "inventory" },
+      { id: "interfaces", type: "page", page: "interfaces" },
+      { id: "endpoints", type: "page", page: "endpoints" },
+      { id: "topology", type: "page", page: "topology" },
+      { id: "discovery", type: "page", page: "discovery" },
+    ] },
+    { id: "connectivity", type: "group", label: "Networks & Connectivity", children: [
+      { id: "vlans", type: "page", page: "vlans" },
+      { id: "tenants", type: "page", page: "tenants" },
+      { id: "subnets", type: "page", page: "subnets" },
+      { id: "routing", type: "page", page: "routing" },
+      { id: "fabric", type: "page", page: "fabric" },
+      { id: "wan", type: "page", page: "wan" },
+    ] },
+    { id: "segmentation", type: "group", label: "Policies & Segmentation", children: [
+      { id: "policies", type: "page", page: "policies" },
+      { id: "groups", type: "page", page: "groups" },
+      { id: "qos", type: "page", page: "qos" },
+      { id: "validation", type: "page", page: "validation" },
+    ] },
+    { id: "automation", type: "group", label: "Automation", children: [
+      { id: "templates", type: "page", page: "templates" },
+      { id: "provisioning", type: "page", page: "provisioning" },
+      { id: "backups", type: "page", page: "backups" },
+      { id: "drift", type: "page", page: "drift" },
+      { id: "changes", type: "page", page: "changes" },
+      { id: "firmware", type: "page", page: "firmware" },
+    ] },
+    { id: "assurance-group", type: "group", label: "Assurance", children: [
+      { id: "assurance", type: "page", page: "assurance" },
+      { id: "incidents", type: "page", page: "incidents" },
+      { id: "telemetry", type: "page", page: "telemetry" },
+      { id: "diagnostics", type: "page", page: "diagnostics" },
+    ] },
+    { id: "reports-group", type: "group", label: "Reports & Compliance", children: [
+      { id: "reports", type: "page", page: "reports" },
+    ] },
+    { id: "administration", type: "group", label: "Administration", children: [
+      { id: "connectors", type: "page", page: "connectors" },
+      { id: "integrations", type: "page", page: "integrations" },
+      { id: "credentials", type: "page", page: "credentials" },
+      { id: "audit", type: "page", page: "audit" },
+      { id: "controllers", type: "page", page: "controllers" },
+      { id: "settings", type: "page", page: "settings" },
+    ] },
+  ];
+}
+
 export function dropPage(items: NavItem[], page: string, targetId: string, where: "before" | "after" | "into"): NavItem[] {
   if (!page || !targetId || page === targetId) return items;
   const tree = clone(items);

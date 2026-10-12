@@ -58,7 +58,31 @@ docker compose -f deploy/docker-compose.yml run --rm api seed
 
 Set `DEV_ADMIN_PASSWORD` for that command. Health checks are `GET /healthz` and `GET /readyz`. `GET /metrics` exposes `sdn_up 1`.
 
-Terminate TLS at the platform ingress. Set `ALLOWED_ORIGINS` to the Vercel origin and `PUBLIC_API_BASE` to the public API origin. Take database backups with the PostgreSQL host's backup tool. Application configuration backups are manifests inside the database; they are not a substitute for a database backup.
+Terminate TLS at the platform ingress. Set `ALLOWED_ORIGINS` to the Vercel origin and `PUBLIC_API_BASE` to the public API origin. The API also allows `https://sdn-psi.vercel.app` and this project's Vercel preview hosts (`https://sdn-git-*-majd-6c6d.vercel.app`), including `https://sdn-git-cursor-sdn-platform-9880-majd-6c6d.vercel.app`. Take database backups with the PostgreSQL host's backup tool. Application configuration backups are manifests inside the database; they are not a substitute for a database backup.
+
+## Oracle host
+
+The public API is `https://sdn-api.84-8-104-48.sslip.io`. Caddy already forwards `/api/v1/*` to the Go process: a missing route comes back as `404 page not found` with `X-Request-Id`, which is the API's own 404, not a proxy block.
+
+The frontend at `5ea1e3b` calls `GET /api/v1/preferences`, `GET /api/v1/command-room/incidents`, and `GET /api/v1/topology`. Those preference and incident routes, and the site nodes the topology view draws, are in that commit. They are not in the older binary currently running. Startup applies only migration files that are not already recorded in `schema_migrations`. For this upgrade those files are `004_connectors_discovery.sql` and `005_site_adapter.sql`. They add columns, tables, and check constraints. They do not delete users or inventory. Do not run `seed`.
+
+On the Oracle host, from the existing checkout and service:
+
+```sh
+cd /opt/sdn
+git fetch origin cursor/production-api-alignment-9880
+git checkout cursor/production-api-alignment-9880
+CGO_ENABLED=0 go build -o /usr/local/bin/sdn-api ./services/api/cmd/api
+# Keep the current environment file. Do not replace TOKEN_SECRET or the database URL.
+# Confirm ALLOWED_ORIGINS contains the production origin. The preview hosts above
+# are allowed by the binary; leave the existing DATABASE_URL and AUTH_MODE untouched.
+sudo systemctl restart sdn-api
+curl -fsS https://sdn-api.84-8-104-48.sslip.io/readyz
+curl -sS -o /dev/null -w '%{http_code}\n' https://sdn-api.84-8-104-48.sslip.io/api/v1/preferences
+curl -sS -o /dev/null -w '%{http_code}\n' https://sdn-api.84-8-104-48.sslip.io/api/v1/command-room/incidents
+```
+
+Unauthenticated calls should return `401` with a JSON error after the upgrade, not `404 page not found`. If the unit is not named `sdn-api`, use `systemctl list-units --type=service | grep -i sdn` and restart that unit. If the process is Docker instead of systemd, rebuild with `docker compose -f deploy/docker-compose.yml up -d --build api` and do not run the `seed` service.
 
 The site agent runs inside the managed network and dials out. Do not publish device management ports to the API host.
 
