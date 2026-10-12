@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dissolveGroup, dropPage, movePage, reparent, type NavItem } from "./nav";
+import { defaultNavigation, dissolveGroup, dropPage, movePage, reparent, type NavItem } from "./nav";
 
 const tree: NavItem[] = [
   { id: "command", type: "page", page: "command" },
@@ -8,6 +8,13 @@ const tree: NavItem[] = [
     { id: "inventory", type: "page", page: "inventory" },
   ] },
 ];
+
+describe("default navigation", () => {
+  it("includes the command room, topology, and incidents for every reader", () => {
+    const pages = defaultNavigation().flatMap((item) => item.children ?? []).map((item) => item.page);
+    expect(pages).toEqual(expect.arrayContaining(["command", "topology", "incidents"]));
+  });
+});
 
 describe("navigation edits", () => {
   it("reorders, reparents, and keeps pages when a group is removed", () => {
