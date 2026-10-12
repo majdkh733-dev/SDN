@@ -91,6 +91,10 @@ Automated checks cover organization isolation, self-approval denial, confirmatio
 
 A frontend that runs the simulator is a demonstration release. Production launch is not complete until the API, external OIDC, PostgreSQL, connectors, and the required workflows are deployed and verified on the target network. That verification is not claimed here.
 
+## Site connectors and Command Room
+
+Connectors run inside the site and dial out. Enrollment is a 15-minute one-time token. The stored credential is revocable and is not returned again. Discovery jobs are leased to the assigned connector. An offline connector marks telemetry stale; it does not mark every device down. Identity is `site + serial`, then MAC, then IP, so the same private address in two sites stays two assets. Manual fields listed in `locked_fields` survive later imports. Navigation and theme are stored per organization. The Command Room reads inventory, verified topology, drift, and audit. Workload counts and availability percentages stay unavailable until those collectors exist. Details are in `docs/connectors.md`.
+
 ## Explicit gaps
 
 - Temporal workflow code is implemented and covered by the SDK test suite. No Temporal cluster is deployed here, and `TEMPORAL_ADDRESS` is empty, so the driver that ran the recovery tests is PostgreSQL.
@@ -99,3 +103,5 @@ A frontend that runs the simulator is a demonstration release. Production launch
 - `TestLabProbe` and `scripts/ovn-lab-check.sh` reported `implemented_unverified` because `ovn-nbctl` is not installed. No lab northbound result exists.
 - Vercel project creation needs an account token. Production launch stays incomplete until the API, external OIDC, PostgreSQL, Vault, and connectors are deployed and verified.
 - Split-origin cookies need `COOKIE_SAMESITE=none` and `SECURE_COOKIES=true`.
+- Discovery was verified with a local TCP listener and the API test database. No physical switch, SNMP agent, or vendor API was available, so those collectors are not claimed as lab-verified.
+- Helm, AWS, and Windows connector cards are visible and marked unavailable. They do not install anything.

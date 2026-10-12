@@ -29,13 +29,19 @@ Open http://localhost:5173. The Vite server proxies `/api` and `/oidc` to http:/
 - viewer@nexora.demo
 - admin@isolated.demo (a second organization used to prove isolation)
 
-To exercise the outbound connector, enroll a token in the console, then:
+Site connectors use a one-time enrollment token, then a stored credential. Install, uninstall, discovery, and the outbound port list are in `docs/connectors.md`. A short local run:
 
 ```sh
-SDN_API_URL=http://127.0.0.1:8080 SDN_AGENT_TOKEN='the-token' SDN_SITE_NAME='Riyadh DC1' go run ./connectors/site-agent
+SDN_API_URL=http://127.0.0.1:8080 SDN_ENROLLMENT_TOKEN='paste-the-one-time-token' SDN_AGENT_STATE=/tmp/sdn-connector go run ./connectors/site-agent
 ```
 
-Queue discovery with "Queue for site agent". With `INLINE_WORKFLOWS=false`, run `go run ./services/worker/cmd/worker` so confirmed changes are claimed outside the API process. The default local API runs workflows inline so the console can follow them without a second process. Leave `TEMPORAL_ADDRESS` empty unless a Temporal frontend is already running. An empty address keeps the PostgreSQL worker. `SECRET_BACKEND=memory` is the local default and stores nothing durable.
+Docker and systemd examples are in that document and in `deploy/connector-compose.yml`. Scheduled discovery needs the worker even when change workflows run inside the API:
+
+```sh
+go run ./services/worker/cmd/worker
+```
+
+With `INLINE_WORKFLOWS=false`, the same worker also claims confirmed changes. The default local API runs change workflows inline so the console can follow them without a second process. Leave `TEMPORAL_ADDRESS` empty unless a Temporal frontend is already running. An empty address keeps the PostgreSQL worker. `SECRET_BACKEND=memory` is the local default and stores nothing durable.
 
 ## Containers
 

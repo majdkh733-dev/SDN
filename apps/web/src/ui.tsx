@@ -22,10 +22,10 @@ export function message(error: unknown, fallback: string) {
 }
 
 export function tone(status: string): "ok" | "bad" | "warn" | "info" | "neutral" {
-  if (["succeeded", "healthy", "approved", "active", "valid", "verified", "remediated", "demo", "compensated"].includes(status)) return "ok";
-  if (["failed", "rollback_failed", "rejected", "down", "not_implemented"].includes(status)) return "bad";
-  if (["partial", "unknown", "compensating", "pending_reconciliation", "implemented_unverified", "open", "validated", "queued"].includes(status)) return "warn";
-  if (["applying", "verifying"].includes(status)) return "info";
+  if (["succeeded", "healthy", "approved", "active", "valid", "verified", "remediated", "demo", "compensated", "online", "completed", "matched"].includes(status)) return "ok";
+  if (["failed", "rollback_failed", "rejected", "down", "not_implemented", "offline", "revoked", "ambiguous"].includes(status)) return "bad";
+  if (["partial", "unknown", "compensating", "pending_reconciliation", "implemented_unverified", "open", "validated", "queued", "connecting", "degraded", "not_enrolled", "cancelled"].includes(status)) return "warn";
+  if (["applying", "verifying", "running"].includes(status)) return "info";
   return "neutral";
 }
 

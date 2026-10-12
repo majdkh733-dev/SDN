@@ -1,28 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, Route, Routes, useNavigate } from "react-router-dom";
 import { api, type Principal } from "./api";
 import { ChangePage, ChangesPage } from "./pages/changes";
 import { CommandPage } from "./pages/command";
+import { ConnectorsPage, ConnectorPage } from "./pages/connectors";
+import { DiscoveryPage } from "./pages/discovery";
 import { DevicePage, InventoryPage } from "./pages/inventory";
 import { CallbackPage, LoginPage } from "./pages/login";
 import { AssurancePage, AuditPage, ControllersPage, DesiredPage, FabricPage, IntegrationsPage, SettingsPage } from "./pages/operate";
 import { PoliciesPage } from "./pages/policies";
+import { SitesPage } from "./pages/sites";
 import { useUI } from "./session";
+import { SidebarNav } from "./sidebar";
+import { applyTheme, type Theme } from "./theme";
 import { useDirection, useT } from "./ui";
-
-const links = [
-  { to: "/", key: "command", end: true },
-  { to: "/policies", key: "policies", end: false },
-  { to: "/fabric", key: "fabric", end: false },
-  { to: "/controllers", key: "controllers", end: false },
-  { to: "/changes", key: "changes", end: false },
-  { to: "/desired", key: "desired", end: false },
-  { to: "/assurance", key: "assurance", end: false },
-  { to: "/inventory", key: "inventory", end: false },
-  { to: "/integrations", key: "integrations", end: false },
-  { to: "/audit", key: "audit", end: false },
-  { to: "/settings", key: "settings", end: false },
-];
 
 function Shell() {
   const t = useT();
@@ -31,7 +23,15 @@ function Shell() {
   const menuOpen = useUI((s) => s.menuOpen);
   const setMenuOpen = useUI((s) => s.setMenuOpen);
   const me = useQuery({ queryKey: ["me"], queryFn: () => api<Principal>("/api/v1/auth/me"), retry: false });
+  const prefs = useQuery({
+    queryKey: ["preferences"],
+    queryFn: () => api<{ theme: Theme }>("/api/v1/preferences"),
+    enabled: Boolean(me.data),
+  });
   useDirection();
+  useEffect(() => {
+    if (prefs.data?.theme) applyTheme(prefs.data.theme);
+  }, [prefs.data]);
   if (me.isLoading) return <p className="state" role="status">{t("loading")}</p>;
   if (me.isError || !me.data) return <LoginPage />;
   const principal = me.data;
@@ -45,13 +45,7 @@ function Shell() {
       <a className="skip" href="#content">{t("skip")}</a>
       <aside className={menuOpen ? "sidebar open" : "sidebar"}>
         <div className="brand"><strong>{t("product")}</strong><span>{t("tagline")}</span></div>
-        <nav className="nav" aria-label={t("product")}>
-          {links.map((link) => (
-            <NavLink key={link.to} to={link.to} end={link.end} className={({ isActive }) => (isActive ? "active" : undefined)} onClick={() => setMenuOpen(false)}>
-              {t(link.key)}
-            </NavLink>
-          ))}
-        </nav>
+        <SidebarNav principal={principal} onNavigate={() => setMenuOpen(false)} />
         <div className="side-user">
           <p>{principal.display_name}</p>
           <p className="muted">{principal.organization.organization_name}</p>
@@ -76,6 +70,11 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Shell />}>
         <Route path="/" element={<CommandPage />} />
+        <Route path="/topology" element={<CommandPage initialView="network" />} />
+        <Route path="/sites" element={<SitesPage />} />
+        <Route path="/connectors" element={<ConnectorsPage />} />
+        <Route path="/connectors/:id" element={<ConnectorPage />} />
+        <Route path="/discovery" element={<DiscoveryPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/fabric" element={<FabricPage />} />
         <Route path="/controllers" element={<ControllersPage />} />
