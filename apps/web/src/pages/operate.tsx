@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { api, can, type Principal } from "../api";
 import { confirmationMatches } from "../confirm";
+import { AdapterTable } from "./platform";
 import { ThemePanel } from "./theme";
 import { Badge, Empty, Field, FormError, Page, QueryState, formatTime, onSubmit, useT } from "../ui";
 import { useUI } from "../session";
@@ -264,6 +265,7 @@ export function AssurancePage() {
 export function IntegrationsPage() {
   const t = useT();
   const items = useQuery({ queryKey: ["integrations"], queryFn: () => api<{ kind: string; name: string; status: string; detail: string }[]>("/api/v1/integrations") });
+  const adapters = useQuery({ queryKey: ["adapters"], queryFn: () => api<{ adapter: string; status: string; note: string; config_read: boolean; config_write: boolean; monitoring: boolean; discovery: boolean }[]>("/api/v1/adapters") });
   return (
     <Page title={t("integrations")} crumbs={[{ to: "/", label: t("command") }, { label: t("integrations") }]}>
       <section className="panel">
@@ -278,6 +280,8 @@ export function IntegrationsPage() {
             </tbody>
           </table>
         </QueryState>
+        <h2>Support matrix</h2>
+        <AdapterTable rows={adapters.data ?? []} />
       </section>
     </Page>
   );

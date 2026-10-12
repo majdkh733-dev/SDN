@@ -28,6 +28,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
     mutationFn: () => api("/api/v1/preferences/navigation/reset", { method: "POST", body: "{}" }),
     onSuccess: async () => {
       setDraft(null);
+      setEditing(false);
       await qc.invalidateQueries({ queryKey: ["preferences"] });
     },
   });
@@ -60,7 +61,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
           <summary>
             {editing ? (
               <input aria-label={t("groupLabel")} value={item.label || ""} onChange={(event) => update(renameGroup(items, item.id, event.target.value))} />
-            ) : item.label}
+            ) : groupTitle(t, item.id, item.label || "")}
           </summary>
           <div className="nav-children">
             {(item.children ?? []).map((child) => renderItem(child, depth + 1))}
@@ -115,7 +116,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
               <button type="button" onClick={() => draft && save.mutate(draft)} disabled={!draft || save.isPending}>{t("save")}</button>
               <button type="button" className="secondary" onClick={() => { setDraft(null); setEditing(false); }}>{t("cancel")}</button>
               <button type="button" className="secondary" onClick={() => reset.mutate()}>{t("reset")}</button>
-              {save.error ? <p className="state error" role="alert">{message(save.error, t("requestFailed"))}</p> : null}
+              {save.error || reset.error ? <p className="state error" role="alert">{message(save.error || reset.error, t("requestFailed"))}</p> : null}
             </>
           ) : (
             <button type="button" className="secondary" onClick={() => setEditing(true)}>{t("editNav")}</button>
@@ -128,4 +129,10 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
 
 function NavMark({ page }: { page: string }) {
   return <span className={`nav-mark nav-mark-${page}`} aria-hidden="true" />;
+}
+
+function groupTitle(t: (key: string) => string, id: string, label: string) {
+  const key = "group." + id;
+  const translated = t(key);
+  return translated === key ? label : translated;
 }

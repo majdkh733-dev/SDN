@@ -237,7 +237,7 @@ func (s *Store) runLocked(ctx context.Context, orgID, changeID string) error {
 func deviceIDs(impact domain.Impact) []string {
 	ids := []string{}
 	for _, item := range impact.Items {
-		if item.DeviceID != "" && !item.Blocking && item.Action == "add_acl" {
+		if item.DeviceID != "" && !item.Blocking && (item.Action == "add_acl" || item.Action == "set_vlan") {
 			ids = append(ids, item.DeviceID)
 		}
 	}
@@ -345,9 +345,11 @@ func (s *Store) applyOne(ctx context.Context, orgID, changeID, versionID string,
 			return nil
 		}
 		var present bool
-		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM simulator_acls WHERE device_id = $1 AND policy_version_id = $2)
-		`, deviceID, versionID).Scan(&present); err != nil {
+		presentQuery := `SELECT EXISTS (SELECT 1 FROM simulator_acls WHERE device_id = $1 AND policy_version_id = $2)`
+		if spec.Operation == "vlan" {
+			presentQuery = `SELECT EXISTS (SELECT 1 FROM simulator_vlans WHERE device_id = $1 AND policy_version_id = $2)`
+		}
+		if err := tx.QueryRow(ctx, presentQuery, deviceID, versionID).Scan(&present); err != nil {
 			return err
 		}
 		if current == "unknown" && present {
@@ -385,7 +387,26 @@ func (s *Store) applyOne(ctx context.Context, orgID, changeID, versionID string,
 			next = "failed"
 			detail["outcome"] = "write rejected by simulator"
 		default:
-			if err := insertACL(ctx, tx, orgID, deviceID, versionID, spec); err != nil {
+			if spec.Operation == "vlan" {
+				current, err := renderDeviceConfig(ctx, tx, orgID, deviceID, true)
+				if err != nil {
+					return err
+				}
+				if spec.VLAN != nil && spec.VLAN.Baseline != "" && checksumText(current) != spec.VLAN.Baseline {
+					next = "failed"
+					detail["outcome"] = "observed configuration no longer matches the reviewed baseline"
+					_, err = tx.Exec(ctx, `
+						UPDATE execution_steps
+						SET status = $3, attempt = $4, authority_epoch = $5, result = $6, updated_at = now()
+						WHERE change_request_id = $1 AND operation_key = $2
+					`, changeID, key, next, attempt+1, epoch, mustJSON(detail))
+					status = "baseline"
+					return err
+				}
+				if err := insertVLAN(ctx, tx, orgID, deviceID, versionID, spec); err != nil {
+					return err
+				}
+			} else if err := insertACL(ctx, tx, orgID, deviceID, versionID, spec); err != nil {
 				return err
 			}
 			if err := writeObserved(ctx, tx, orgID, deviceID); err != nil {
@@ -434,7 +455,24 @@ func writeObserved(ctx context.Context, tx pgx.Tx, orgID, deviceID string) error
 	if aces == nil {
 		aces = []ace{}
 	}
-	doc := map[string]any{"acls": aces, "collector": "simulator", "note": "Observed state comes from the simulator, not a device poll."}
+	var vids []int
+	vrows, err := tx.Query(ctx, `SELECT vid FROM simulator_vlans WHERE organization_id = $1 AND device_id = $2 ORDER BY vid`, orgID, deviceID)
+	if err != nil {
+		return err
+	}
+	for vrows.Next() {
+		var vid int
+		if err := vrows.Scan(&vid); err != nil {
+			vrows.Close()
+			return err
+		}
+		vids = append(vids, vid)
+	}
+	vrows.Close()
+	if vids == nil {
+		vids = []int{}
+	}
+	doc := map[string]any{"acls": aces, "vlans": vids, "collector": "simulator", "note": "Observed state comes from the simulator, not a device poll."}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO observed_states (organization_id, device_id, document, freshness, collector)
 		VALUES ($1, $2, $3, 'fresh', 'simulator')
@@ -476,6 +514,11 @@ func (s *Store) finishChange(ctx context.Context, orgID, changeID string, prep r
 	expected := len(deviceIDs(prep.Impact))
 	if cancelled > 0 && succeeded == 0 {
 		return s.forceChange(ctx, orgID, changeID, "cancelled", "Cancelled before device writes")
+	}
+	for _, result := range results {
+		if result == "baseline" && succeeded == 0 {
+			return s.forceChange(ctx, orgID, changeID, "failed", "observed configuration no longer matches the reviewed baseline")
+		}
 	}
 	if failed > 0 || (cancelled > 0 && succeeded > 0) {
 		return s.compensate(ctx, orgID, changeID, prep)
@@ -557,7 +600,11 @@ func (s *Store) compensate(ctx context.Context, orgID, changeID string, prep run
 				rollbackFailed = true
 				return err
 			}
-			if _, err := tx.Exec(ctx, `DELETE FROM simulator_acls WHERE organization_id = $1 AND device_id = $2 AND policy_version_id = $3`, orgID, id, prep.VersionID); err != nil {
+			if prep.Spec.Operation == "vlan" {
+				if _, err := tx.Exec(ctx, `DELETE FROM simulator_vlans WHERE organization_id = $1 AND device_id = $2 AND policy_version_id = $3`, orgID, id, prep.VersionID); err != nil {
+					return err
+				}
+			} else if _, err := tx.Exec(ctx, `DELETE FROM simulator_acls WHERE organization_id = $1 AND device_id = $2 AND policy_version_id = $3`, orgID, id, prep.VersionID); err != nil {
 				return err
 			}
 			if err := writeObserved(ctx, tx, orgID, id); err != nil {
@@ -592,7 +639,7 @@ func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep 
 	}); err != nil {
 		return err
 	}
-	return s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		var verifyStatus string
 		if err := tx.QueryRow(ctx, `SELECT status FROM execution_steps WHERE change_request_id = $1 AND operation_key = 'verify'`, changeID).Scan(&verifyStatus); err != nil {
 			return err
@@ -615,10 +662,22 @@ func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep 
 		assertions := []map[string]any{}
 		for _, id := range deviceIDs(prep.Impact) {
 			var ok bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM simulator_acls WHERE device_id = $1 AND policy_version_id = $2)`, id, prep.VersionID).Scan(&ok); err != nil {
+			query := `SELECT EXISTS (SELECT 1 FROM simulator_acls WHERE device_id = $1 AND policy_version_id = $2)`
+			kind := "simulator_acl"
+			if prep.Spec.Operation == "vlan" {
+				query = `SELECT EXISTS (SELECT 1 FROM simulator_vlans WHERE device_id = $1 AND policy_version_id = $2 AND vid = $3)`
+				kind = "simulator_vlan"
+			}
+			var err error
+			if prep.Spec.Operation == "vlan" && prep.Spec.VLAN != nil {
+				err = tx.QueryRow(ctx, query, id, prep.VersionID, prep.Spec.VLAN.VID).Scan(&ok)
+			} else {
+				err = tx.QueryRow(ctx, query, id, prep.VersionID).Scan(&ok)
+			}
+			if err != nil {
 				return err
 			}
-			assertions = append(assertions, map[string]any{"device_id": id, "acl_present": ok, "kind": "simulator"})
+			assertions = append(assertions, map[string]any{"device_id": id, "present": ok, "kind": kind})
 			if !ok {
 				missing++
 			}
@@ -627,7 +686,10 @@ func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep 
 		if missing > 0 {
 			result = "failed"
 		}
-		evidence := "Verification compared simulator ACL rows with the approved policy version. This is not a traffic probe."
+		evidence := "Verification compared simulator state with the approved change. This is not a traffic probe."
+		if prep.Spec.Operation == "vlan" {
+			evidence = "Verification checked the simulator VLAN row for the approved VLAN id. Automatic rollback deletes that row. This is not a device commit check."
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO verification_results (organization_id, change_request_id, scope, assertions, result, evidence)
 			VALUES ($1, $2, $3, $4, $5, $6)
@@ -639,7 +701,22 @@ func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep 
 			return err
 		}
 		if result != "passed" {
-			return forceStatus(ctx, tx, changeID, "failed", "Verification did not observe the approved ACL")
+			reason := "Verification did not observe the approved change"
+			if prep.Spec.Operation != "vlan" {
+				reason = "Verification did not observe the approved ACL"
+			}
+			return forceStatus(ctx, tx, changeID, "failed", reason)
+		}
+		if prep.Spec.Operation == "vlan" {
+			for _, id := range deviceIDs(prep.Impact) {
+				body, err := renderDeviceConfig(ctx, tx, orgID, id, false)
+				if err != nil {
+					return err
+				}
+				if err := insertConfigRevision(ctx, tx, orgID, id, "desired", body, "simulator", changeID); err != nil {
+					return err
+				}
+			}
 		}
 		doc := map[string]any{"policy_version_id": prep.VersionID, "plan_hash": prep.PlanHash, "spec": prep.Spec, "devices": deviceIDs(prep.Impact)}
 		if _, err := tx.Exec(ctx, `
@@ -662,8 +739,22 @@ func (s *Store) verifySuccess(ctx context.Context, orgID, changeID string, prep 
 		if err != nil {
 			return err
 		}
-		return insertAudit(ctx, tx, orgID, "", "change.succeeded", "change_request", changeID, "", map[string]string{"plan_hash": prep.PlanHash})
+		if err := insertAudit(ctx, tx, orgID, "", "change.succeeded", "change_request", changeID, "", map[string]string{"plan_hash": prep.PlanHash}); err != nil {
+			return err
+		}
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	var status string
+	_ = s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT status FROM change_requests WHERE organization_id = $1 AND id = $2`, orgID, changeID).Scan(&status)
+	})
+	if status == "succeeded" {
+		_ = s.DeliverWebhooks(ctx, orgID, "change.succeeded", changeID)
+	}
+	return nil
 }
 
 func (s *Store) ClaimedChanges(ctx context.Context) ([][2]string, error) {

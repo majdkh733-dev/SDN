@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -95,6 +96,9 @@ func insertVersion(ctx context.Context, tx pgx.Tx, orgID, policyID, userID strin
 }
 
 func (s *Store) validateSpecRefs(ctx context.Context, tx pgx.Tx, orgID string, spec domain.PolicySpec) error {
+	if spec.Operation == "vlan" {
+		return validateVLANRefs(ctx, tx, orgID, spec)
+	}
 	var tenantOK bool
 	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM tenants WHERE organization_id = $1 AND id = $2 AND lifecycle = 'active')
@@ -236,6 +240,36 @@ func (s *Store) BuildImpact(ctx context.Context, orgID, versionID string) (domai
 	return impact, spec, err
 }
 
+func validateVLANRefs(ctx context.Context, tx pgx.Tx, orgID string, spec domain.PolicySpec) error {
+	var tenantOK bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE organization_id = $1 AND id = $2 AND lifecycle = 'active')`, orgID, spec.TenantID).Scan(&tenantOK); err != nil {
+		return err
+	}
+	if !tenantOK {
+		return apierr.Invalid("tenant was not found in this organization")
+	}
+	var siteOK bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sites WHERE organization_id = $1 AND id = $2)`, orgID, spec.SiteIDs[0]).Scan(&siteOK); err != nil {
+		return err
+	}
+	if !siteOK {
+		return apierr.Invalid("site was not found in this organization")
+	}
+	var deviceSite string
+	var origin string
+	err := tx.QueryRow(ctx, `SELECT site_id::text, data_origin FROM devices WHERE organization_id = $1 AND id = $2 AND lifecycle = 'active'`, orgID, spec.VLAN.DeviceID).Scan(&deviceSite, &origin)
+	if err != nil {
+		return apierr.Invalid("device was not found in this organization")
+	}
+	if deviceSite != spec.SiteIDs[0] {
+		return apierr.Invalid("device is not in the selected site")
+	}
+	if origin != "simulator" {
+		return apierr.Unsupported("VLAN configuration write is implemented for the simulator lab adapter only. This device has no config.write adapter.")
+	}
+	return nil
+}
+
 func impactTx(ctx context.Context, tx pgx.Tx, orgID, versionID string) (domain.Impact, domain.PolicySpec, error) {
 	var spec domain.PolicySpec
 	var raw []byte
@@ -250,6 +284,9 @@ func impactTx(ctx context.Context, tx pgx.Tx, orgID, versionID string) (domain.I
 		return domain.Impact{}, domain.PolicySpec{}, err
 	}
 	spec = domain.NormalizeSpec(spec)
+	if spec.Operation == "vlan" {
+		return vlanImpact(ctx, tx, orgID, versionID, status, spec)
+	}
 	impact := domain.Impact{PolicyVersionID: versionID}
 	if status != "valid" {
 		impact.Blocked = true
@@ -347,6 +384,46 @@ func impactTx(ctx context.Context, tx pgx.Tx, orgID, versionID string) (domain.I
 		}
 		return impact.Items[i].DeviceID < impact.Items[j].DeviceID
 	})
+	return impact, spec, nil
+}
+
+func vlanImpact(ctx context.Context, tx pgx.Tx, orgID, versionID, status string, spec domain.PolicySpec) (domain.Impact, domain.PolicySpec, error) {
+	impact := domain.Impact{PolicyVersionID: versionID}
+	if status != "valid" {
+		impact.Blocked = true
+		impact.BlockReason = "policy version is not valid"
+		return impact, spec, nil
+	}
+	var name, origin, domainName string
+	err := tx.QueryRow(ctx, `
+		SELECT d.name, d.data_origin, s.execution_domain
+		FROM devices d JOIN sites s ON s.id = d.site_id
+		WHERE d.organization_id = $1 AND d.id = $2 AND d.lifecycle = 'active'
+	`, orgID, spec.VLAN.DeviceID).Scan(&name, &origin, &domainName)
+	if err != nil {
+		impact.Blocked = true
+		impact.BlockReason = "device was not found"
+		impact.Items = []domain.ImpactItem{}
+		return impact, spec, nil
+	}
+	item := domain.ImpactItem{
+		DeviceID: spec.VLAN.DeviceID, DeviceName: name, Classification: "calculated", Action: "set_vlan",
+		Detail: "Create VLAN " + strconv.Itoa(spec.VLAN.VID) + " " + spec.VLAN.Name + " on the simulator lab adapter",
+	}
+	if origin != "simulator" {
+		item.Blocking = true
+		item.Action = "blocked"
+		item.Detail = "no adapter can write VLANs on this device"
+		impact.Blocked = true
+		impact.BlockReason = "VLAN write is available on the simulator lab adapter only"
+	}
+	_ = domainName
+	impact.Items = []domain.ImpactItem{item, {
+		Classification: "unknown", Action: "performance",
+		Detail: "Performance impact is unknown. The simulator does not forward traffic.",
+	}}
+	impact.Calculated = 1
+	impact.Unknown = 1
 	return impact, spec, nil
 }
 

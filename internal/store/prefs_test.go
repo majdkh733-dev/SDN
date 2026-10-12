@@ -13,6 +13,27 @@ func TestNavigationRejectsMissingSettings(t *testing.T) {
 	}
 }
 
+func TestReconcileKeepsCustomOrder(t *testing.T) {
+	saved := Navigation{Items: []NavItem{
+		{ID: "command", Type: "page", Page: "command"},
+		{ID: "network", Type: "group", Label: "Custom network", Children: []NavItem{
+			{ID: "inventory", Type: "page", Page: "inventory"},
+			{ID: "topology", Type: "page", Page: "topology"},
+			{ID: "desired", Type: "page", Page: "desired"},
+		}},
+	}}
+	got := ReconcileNavigation(saved)
+	if err := ValidateNavigation(got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Items[1].Label != "Custom network" {
+		t.Fatalf("custom group label lost: %#v", got.Items[1])
+	}
+	if got.Items[1].Children[0].Page != "inventory" || got.Items[1].Children[1].Page != "topology" {
+		t.Fatalf("custom order lost: %#v", got.Items[1].Children)
+	}
+}
+
 func TestThemeContrast(t *testing.T) {
 	theme := DefaultTheme()
 	theme.Preset = "custom"

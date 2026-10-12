@@ -214,6 +214,32 @@ textarea { min-height: 72px; resize: vertical; }
 pre.mono { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: var(--radius); }
 html[data-theme="dark"] button:not(.secondary) { color: #06202a; }
 html[data-theme="dark"] .badge { background: transparent; }
+.ref-topology { display: grid; gap: 10px; }
+.ref-toolbar, .ref-edit { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.ref-toolbar h1 { margin: 0; font-size: 22px; }
+.ref-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 12px; min-height: 0; }
+.ref-canvas-wrap { background: #fff; border: 1px solid #111; min-height: 70vh; height: 74vh; overflow: hidden; }
+.ref-topology.embedded .ref-canvas-wrap { height: 64vh; min-height: 520px; }
+.map-table-wrap { max-height: 320px; overflow: auto; margin-top: 8px; }
+.map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.map-table th, .map-table td { border-bottom: 1px solid var(--line); text-align: start; padding: 6px 8px; vertical-align: top; }
+@font-face {
+  font-family: "Architects Daughter";
+  src: url("/drawio/fonts/ArchitectsDaughter-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+.ref-canvas { width: 100%; height: 100%; background: #fff; color: #111; }
+.ref-canvas > svg { width: 100%; height: 100%; background: #fff; }
+.ref-drawer { max-height: 74vh; overflow: auto; }
+.ref-edit select { min-width: 180px; }
+@media (max-width: 880px) {
+  .ref-stage { grid-template-columns: 1fr; }
+  .ref-canvas-wrap, .ref-drawer { height: auto; max-height: none; }
+  .ref-canvas-wrap { min-height: 70vh; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .command-room, .graph { animation: none; }
 }

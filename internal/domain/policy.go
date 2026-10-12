@@ -19,15 +19,25 @@ type Selector struct {
 	ID   string `json:"id"`
 }
 
+type VLANChange struct {
+	DeviceID  string `json:"device_id"`
+	VID       int    `json:"vid"`
+	Name      string `json:"name"`
+	Interface string `json:"interface,omitempty"`
+	Baseline  string `json:"baseline,omitempty"`
+}
+
 type PolicySpec struct {
-	Name        string   `json:"name"`
-	TenantID    string   `json:"tenant_id"`
-	Source      Selector `json:"source"`
-	Destination Selector `json:"destination"`
-	Protocol    string   `json:"protocol"`
-	Ports       string   `json:"ports"`
-	Action      string   `json:"action"`
-	SiteIDs     []string `json:"site_ids"`
+	Name        string      `json:"name"`
+	TenantID    string      `json:"tenant_id"`
+	Source      Selector    `json:"source"`
+	Destination Selector    `json:"destination"`
+	Protocol    string      `json:"protocol"`
+	Ports       string      `json:"ports"`
+	Action      string      `json:"action"`
+	SiteIDs     []string    `json:"site_ids"`
+	Operation   string      `json:"operation,omitempty"`
+	VLAN        *VLANChange `json:"vlan,omitempty"`
 }
 
 type ImpactItem struct {
@@ -51,6 +61,9 @@ type Impact struct {
 }
 
 func (s PolicySpec) ValidateShape() []string {
+	if s.Operation == "vlan" {
+		return s.validateVLAN()
+	}
 	var errs []string
 	if strings.TrimSpace(s.Name) == "" {
 		errs = append(errs, "name is required")
@@ -84,6 +97,29 @@ func (s PolicySpec) ValidateShape() []string {
 	}
 	if len(s.SiteIDs) == 0 {
 		errs = append(errs, "at least one site is required")
+	}
+	return errs
+}
+
+func (s PolicySpec) validateVLAN() []string {
+	var errs []string
+	if strings.TrimSpace(s.Name) == "" {
+		errs = append(errs, "name is required")
+	}
+	if s.TenantID == "" {
+		errs = append(errs, "tenant_id is required")
+	}
+	if len(s.SiteIDs) != 1 {
+		errs = append(errs, "a VLAN change applies to one site")
+	}
+	if s.VLAN == nil || s.VLAN.DeviceID == "" {
+		errs = append(errs, "vlan.device_id is required")
+	}
+	if s.VLAN == nil || s.VLAN.VID < 1 || s.VLAN.VID > 4094 {
+		errs = append(errs, "vlan id must be between 1 and 4094")
+	}
+	if s.VLAN == nil || strings.TrimSpace(s.VLAN.Name) == "" {
+		errs = append(errs, "vlan name is required")
 	}
 	return errs
 }
@@ -166,9 +202,14 @@ func SortIDs(ids []string) []string {
 
 func NormalizeSpec(spec PolicySpec) PolicySpec {
 	spec.Name = strings.TrimSpace(spec.Name)
+	spec.Operation = strings.ToLower(strings.TrimSpace(spec.Operation))
 	spec.Protocol = strings.ToLower(strings.TrimSpace(spec.Protocol))
 	spec.Action = strings.ToLower(strings.TrimSpace(spec.Action))
 	spec.Ports = strings.TrimSpace(spec.Ports)
 	spec.SiteIDs = SortIDs(spec.SiteIDs)
+	if spec.VLAN != nil {
+		spec.VLAN.Name = strings.TrimSpace(spec.VLAN.Name)
+		spec.VLAN.Interface = strings.TrimSpace(spec.VLAN.Interface)
+	}
 	return spec
 }

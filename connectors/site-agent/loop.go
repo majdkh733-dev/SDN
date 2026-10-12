@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -97,10 +98,36 @@ func (a *agentLoop) once(ctx context.Context) error {
 	if !envelope.Data.Found {
 		return nil
 	}
+	if envelope.Data.Kind == "diagnostic" {
+		return a.runDiagnostic(ctx, envelope.Data.ID, envelope.Data.Payload)
+	}
 	if envelope.Data.Kind != "discovery" {
-		return nil
+		return a.post(ctx, "/api/v1/agent/tasks/"+envelope.Data.ID+"/complete", map[string]any{"ok": false, "error": "unsupported task"})
 	}
 	return a.runDiscovery(ctx, envelope.Data.ID, envelope.Data.Payload)
+}
+
+func (a *agentLoop) runDiagnostic(ctx context.Context, id string, payload json.RawMessage) error {
+	var spec struct {
+		Kind   string `json:"kind"`
+		Target string `json:"target"`
+	}
+	if err := json.Unmarshal(payload, &spec); err != nil {
+		return a.post(ctx, "/api/v1/agent/tasks/"+id+"/complete", map[string]any{"ok": false, "error": "invalid diagnostic"})
+	}
+	switch spec.Kind {
+	case "ping":
+		result := discover.Ping(ctx, spec.Target, 2*time.Second)
+		return a.post(ctx, "/api/v1/agent/tasks/"+id+"/complete", map[string]any{"ok": true, "result": result})
+	case "dns":
+		names, err := net.DefaultResolver.LookupAddr(ctx, spec.Target)
+		if err != nil {
+			return a.post(ctx, "/api/v1/agent/tasks/"+id+"/complete", map[string]any{"ok": true, "result": map[string]any{"ok": false, "detail": "no reverse name"}})
+		}
+		return a.post(ctx, "/api/v1/agent/tasks/"+id+"/complete", map[string]any{"ok": true, "result": map[string]any{"ok": true, "names": names}})
+	default:
+		return a.post(ctx, "/api/v1/agent/tasks/"+id+"/complete", map[string]any{"ok": false, "error": "unsupported diagnostic"})
+	}
 }
 
 func (a *agentLoop) runDiscovery(ctx context.Context, id string, payload json.RawMessage) error {

@@ -29,7 +29,7 @@ Open http://localhost:5173. The Vite server proxies `/api` and `/oidc` to http:/
 - viewer@nexora.demo
 - admin@isolated.demo (a second organization used to prove isolation)
 
-Site connectors use a one-time enrollment token, then a stored credential. Install, uninstall, discovery, and the outbound port list are in `docs/connectors.md`. A short local run:
+Operations behavior, the adapter matrix, and the VLAN workflow are in `docs/platform.md`. Site connectors use a one-time enrollment token, then a stored credential. Install, uninstall, discovery, and the outbound port list are in `docs/connectors.md`. A short local run:
 
 ```sh
 SDN_API_URL=http://127.0.0.1:8080 SDN_ENROLLMENT_TOKEN='paste-the-one-time-token' SDN_AGENT_STATE=/tmp/sdn-connector go run ./connectors/site-agent

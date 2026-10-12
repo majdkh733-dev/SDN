@@ -11,35 +11,66 @@ import (
 )
 
 var pageCatalog = []string{
-	"command", "topology", "fabric", "inventory", "sites", "connectors", "discovery",
-	"controllers", "policies", "changes", "desired", "assurance", "integrations", "audit", "settings",
+	"command",
+	"sites", "inventory", "interfaces", "endpoints", "topology", "discovery",
+	"vlans", "tenants", "subnets", "routing", "fabric", "wan",
+	"policies", "groups", "qos", "validation",
+	"templates", "provisioning", "backups", "drift", "changes", "firmware",
+	"assurance", "incidents", "telemetry", "diagnostics",
+	"reports",
+	"connectors", "integrations", "credentials", "audit", "controllers", "settings",
 }
 
 func DefaultNavigation() Navigation {
 	return Navigation{Items: []NavItem{
-		{ID: "command", Type: "page", Page: "command"},
-		{ID: "network", Type: "group", Label: "Network", Children: []NavItem{
-			{ID: "topology", Type: "page", Page: "topology"},
-			{ID: "fabric", Type: "page", Page: "fabric"},
-			{ID: "inventory", Type: "page", Page: "inventory"},
+		{ID: "command-room", Type: "group", Label: "Command Room", Children: []NavItem{
+			{ID: "command", Type: "page", Page: "command"},
 		}},
-		{ID: "operations", Type: "group", Label: "Operations", Children: []NavItem{
+		{ID: "infrastructure", Type: "group", Label: "Network Infrastructure", Children: []NavItem{
 			{ID: "sites", Type: "page", Page: "sites"},
-			{ID: "connectors", Type: "page", Page: "connectors"},
+			{ID: "inventory", Type: "page", Page: "inventory"},
+			{ID: "interfaces", Type: "page", Page: "interfaces"},
+			{ID: "endpoints", Type: "page", Page: "endpoints"},
+			{ID: "topology", Type: "page", Page: "topology"},
 			{ID: "discovery", Type: "page", Page: "discovery"},
-			{ID: "controllers", Type: "page", Page: "controllers"},
 		}},
-		{ID: "policy", Type: "group", Label: "Policy & Changes", Children: []NavItem{
+		{ID: "connectivity", Type: "group", Label: "Networks & Connectivity", Children: []NavItem{
+			{ID: "vlans", Type: "page", Page: "vlans"},
+			{ID: "tenants", Type: "page", Page: "tenants"},
+			{ID: "subnets", Type: "page", Page: "subnets"},
+			{ID: "routing", Type: "page", Page: "routing"},
+			{ID: "fabric", Type: "page", Page: "fabric"},
+			{ID: "wan", Type: "page", Page: "wan"},
+		}},
+		{ID: "segmentation", Type: "group", Label: "Policies & Segmentation", Children: []NavItem{
 			{ID: "policies", Type: "page", Page: "policies"},
+			{ID: "groups", Type: "page", Page: "groups"},
+			{ID: "qos", Type: "page", Page: "qos"},
+			{ID: "validation", Type: "page", Page: "validation"},
+		}},
+		{ID: "automation", Type: "group", Label: "Automation", Children: []NavItem{
+			{ID: "templates", Type: "page", Page: "templates"},
+			{ID: "provisioning", Type: "page", Page: "provisioning"},
+			{ID: "backups", Type: "page", Page: "backups"},
+			{ID: "drift", Type: "page", Page: "drift"},
 			{ID: "changes", Type: "page", Page: "changes"},
-			{ID: "desired", Type: "page", Page: "desired"},
+			{ID: "firmware", Type: "page", Page: "firmware"},
 		}},
 		{ID: "assurance-group", Type: "group", Label: "Assurance", Children: []NavItem{
 			{ID: "assurance", Type: "page", Page: "assurance"},
+			{ID: "incidents", Type: "page", Page: "incidents"},
+			{ID: "telemetry", Type: "page", Page: "telemetry"},
+			{ID: "diagnostics", Type: "page", Page: "diagnostics"},
+		}},
+		{ID: "reports-group", Type: "group", Label: "Reports & Compliance", Children: []NavItem{
+			{ID: "reports", Type: "page", Page: "reports"},
 		}},
 		{ID: "administration", Type: "group", Label: "Administration", Children: []NavItem{
+			{ID: "connectors", Type: "page", Page: "connectors"},
 			{ID: "integrations", Type: "page", Page: "integrations"},
+			{ID: "credentials", Type: "page", Page: "credentials"},
 			{ID: "audit", Type: "page", Page: "audit"},
+			{ID: "controllers", Type: "page", Page: "controllers"},
 			{ID: "settings", Type: "page", Page: "settings"},
 		}},
 	}}
@@ -104,7 +135,7 @@ func (s *Store) Preferences(ctx context.Context, orgID string) (Preferences, err
 		if len(nav) > 0 && string(nav) != "{}" && string(nav) != "null" {
 			var parsed Navigation
 			if err := json.Unmarshal(nav, &parsed); err == nil && len(parsed.Items) > 0 {
-				prefs.Navigation = parsed
+				prefs.Navigation = ReconcileNavigation(parsed)
 			}
 		}
 		if len(theme) > 0 && string(theme) != "{}" && string(theme) != "null" {
@@ -213,6 +244,82 @@ func ValidateNavigation(nav Navigation) error {
 	for _, page := range pageCatalog {
 		if !seen["page:"+page] {
 			return apierr.Invalid("page " + page + " is missing; removing a group must not delete its pages")
+		}
+	}
+	return nil
+}
+
+func ReconcileNavigation(saved Navigation) Navigation {
+	filtered := filterKnown(saved.Items)
+	present := map[string]bool{}
+	var mark func([]NavItem)
+	mark = func(items []NavItem) {
+		for _, item := range items {
+			if item.Type == "page" {
+				present[item.Page] = true
+			}
+			mark(item.Children)
+		}
+	}
+	mark(filtered)
+	for _, page := range pageCatalog {
+		if present[page] {
+			continue
+		}
+		filtered = placeMissing(filtered, page)
+	}
+	nav := Navigation{Items: filtered}
+	if err := ValidateNavigation(nav); err != nil {
+		return DefaultNavigation()
+	}
+	return nav
+}
+
+func filterKnown(items []NavItem) []NavItem {
+	var out []NavItem
+	for _, item := range items {
+		switch item.Type {
+		case "page":
+			if knownPage(item.Page) {
+				out = append(out, NavItem{ID: item.ID, Type: "page", Page: item.Page})
+			}
+		case "group":
+			children := filterKnown(item.Children)
+			if len(children) == 0 {
+				continue
+			}
+			out = append(out, NavItem{ID: item.ID, Type: "group", Label: item.Label, Children: children})
+		}
+	}
+	return out
+}
+
+func placeMissing(items []NavItem, page string) []NavItem {
+	group := defaultGroup(page)
+	pageItem := NavItem{ID: page, Type: "page", Page: page}
+	if group == nil {
+		return append(items, pageItem)
+	}
+	for i, item := range items {
+		if item.Type == "group" && item.ID == group.ID {
+			item.Children = append(item.Children, pageItem)
+			items[i] = item
+			return items
+		}
+	}
+	return append(items, NavItem{ID: group.ID, Type: "group", Label: group.Label, Children: []NavItem{pageItem}})
+}
+
+func defaultGroup(page string) *NavItem {
+	for _, item := range DefaultNavigation().Items {
+		if item.Type != "group" {
+			continue
+		}
+		for _, child := range item.Children {
+			if child.Page == page {
+				copy := item
+				return &copy
+			}
 		}
 	}
 	return nil

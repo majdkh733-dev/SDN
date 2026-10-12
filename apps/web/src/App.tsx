@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 import { api, type Principal } from "./api";
 import { ChangePage, ChangesPage } from "./pages/changes";
 import { CommandPage } from "./pages/command";
@@ -8,8 +8,10 @@ import { ConnectorsPage, ConnectorPage } from "./pages/connectors";
 import { DiscoveryPage } from "./pages/discovery";
 import { DevicePage, InventoryPage } from "./pages/inventory";
 import { CallbackPage, LoginPage } from "./pages/login";
-import { AssurancePage, AuditPage, ControllersPage, DesiredPage, FabricPage, IntegrationsPage, SettingsPage } from "./pages/operate";
+import { AssurancePage, AuditPage, ControllersPage, FabricPage, IntegrationsPage, SettingsPage } from "./pages/operate";
+import { CredentialsPage, DiagnosticsPage, DriftPage, EndpointsPage, GroupsPage, IncidentsPage, InterfacesPage, ProvisionPage, ReportsPage, SubnetsPage, UnsupportedPage, VlansPage } from "./pages/platform";
 import { PoliciesPage } from "./pages/policies";
+import { ReferenceTopologyPage } from "./pages/reference-topology";
 import { SitesPage } from "./pages/sites";
 import { useUI } from "./session";
 import { SidebarNav } from "./sidebar";
@@ -70,7 +72,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Shell />}>
         <Route path="/" element={<CommandPage />} />
-        <Route path="/topology" element={<CommandPage initialView="network" />} />
+        <Route path="/topology" element={<ReferenceTopologyPage />} />
         <Route path="/sites" element={<SitesPage />} />
         <Route path="/connectors" element={<ConnectorsPage />} />
         <Route path="/connectors/:id" element={<ConnectorPage />} />
@@ -80,10 +82,32 @@ export function App() {
         <Route path="/controllers" element={<ControllersPage />} />
         <Route path="/changes" element={<ChangesPage />} />
         <Route path="/changes/:id" element={<ChangePage />} />
-        <Route path="/desired" element={<DesiredPage />} />
         <Route path="/assurance" element={<AssurancePage />} />
         <Route path="/inventory" element={<InventoryPage />} />
+        <Route path="/devices" element={<Navigate to="/inventory" replace />} />
+        <Route path="/desired" element={<Navigate to="/drift" replace />} />
+        <Route path="/platform" element={<Navigate to="/controllers" replace />} />
         <Route path="/inventory/devices/:id" element={<DevicePage />} />
+        <Route path="/interfaces" element={<InterfacesPage />} />
+        <Route path="/endpoints" element={<EndpointsPage />} />
+        <Route path="/vlans" element={<VlansPage />} />
+        <Route path="/tenants" element={<FabricPage />} />
+        <Route path="/subnets" element={<SubnetsPage />} />
+        <Route path="/routing" element={<UnsupportedPage title="Routing" reason="No adapter collects or writes routes. Nothing is inferred from subnets." />} />
+        <Route path="/wan" element={<UnsupportedPage title="WAN and VPN" reason="WAN and VPN control is not implemented." />} />
+        <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/qos" element={<UnsupportedPage title="QoS" reason="No adapter implements QoS." />} />
+        <Route path="/validation" element={<PoliciesPage />} />
+        <Route path="/templates" element={<ProvisionPage />} />
+        <Route path="/provisioning" element={<ProvisionPage />} />
+        <Route path="/backups" element={<DriftPage />} />
+        <Route path="/drift" element={<DriftPage />} />
+        <Route path="/firmware" element={<UnsupportedPage title="Firmware" reason="Firmware images and end-of-support dates are not integrated." />} />
+        <Route path="/incidents" element={<IncidentsPage />} />
+        <Route path="/telemetry" element={<UnsupportedPage title="Telemetry" reason="Interface counter history is not collected. Utilization is not shown without two samples and a known speed." />} />
+        <Route path="/diagnostics" element={<DiagnosticsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/credentials" element={<CredentialsPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/settings" element={<SettingsPage />} />
