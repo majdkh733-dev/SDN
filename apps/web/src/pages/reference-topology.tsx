@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { api, can, type Principal } from "../api";
 import { diagramCatalog } from "../diagram/catalog";
-import { referenceIcon, regionAt, suggestDevices } from "../diagram/classify";
+import { classifySymbol, referenceIcon, regionAt, suggestDevices } from "../diagram/classify";
 import { mountDiagram, type CellInfo, type DiagramHandle } from "../diagram/drawio";
 import { diagramRegions } from "../diagram/regions";
 import { Badge, Empty, Field, FormError, formatTime, message, useT } from "../ui";
@@ -112,7 +112,6 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
     const host = canvas.current;
     if (!host || !xml.data) return;
     let dead = false;
-    setNotice("");
     void mountDiagram(host, xml.data, (id) => {
       setSelected(id);
     }).then((next) => {
@@ -167,6 +166,7 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
   const filteredDevices = (devices.data || []).filter((item) => (!deviceSite || item.site_id === deviceSite) && (!deviceQuery || `${item.name} ${item.management_endpoint} ${item.serial}`.toLowerCase().includes(deviceQuery.toLowerCase())));
   const preview = (devices.data || []).find((item) => item.id === linkDevice);
   const suggestions = info?.kind === "vertex" ? suggestDevices(info.label, devices.data || []) : [];
+  const selectedKind = info ? classifySymbol({ vertex: info.kind === "vertex", style: info.style, label: info.label, width: info.width, height: info.height }) : "";
   const siteVlans = (vlans.data || []).filter((item) => item.site_id === detail.data?.device.site_id);
   const sitePolicies = (policies.data || []).filter((item) => (item.spec?.site_ids || []).includes(detail.data?.device.site_id || ""));
   const neighbors = (live.data?.edges || []).filter((item) => item.source === deviceId || item.target === deviceId);
@@ -293,7 +293,8 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
                     <p>{t("discoveredLink")} {discovered.measured ? `${discovered.utilization_pct}%` : t("notMeasured")} {discovered.origin || ""}</p>
                   ) : <p className="note">{t("notVerified")}</p>}
                   <p className="note">{t("errorsUnknown")}</p>
-                  {author ? (
+                  {selectedKind !== "link" ? <p className="note">{t("notDeviceLink")}</p> : null}
+                  {author && selectedKind === "link" ? (
                     <form className="stack" onSubmit={(event) => {
                       event.preventDefault();
                       mapLink.mutate({

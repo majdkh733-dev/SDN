@@ -3,6 +3,7 @@ package httpserver
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,4 +121,6 @@ func TestTopologyDiagramBindingIsolation(t *testing.T) {
 	if rows, ok := other["link_bindings"].([]any); ok && len(rows) != 0 {
 		t.Fatalf("isolated links after map %#v", rows)
 	}
+	large := "<mxfile>" + strings.Repeat("a", 1_200_000) + "</mxfile>"
+	postJSON(t, eng, ts.URL+"/api/v1/topology-diagram", map[string]any{"mxfile": large}, http.StatusCreated, nil)
 }

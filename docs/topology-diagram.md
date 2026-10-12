@@ -45,7 +45,7 @@ Reset view returns to the loaded diagram’s full bounds. Cancel edit reloads th
 
 ## Migration
 
-`007_topology_diagram.sql` creates diagram versions and symbol bindings. `008_topology_links.sql` creates link bindings. Both apply when the API starts. No production deploy is part of this change.
+`007_topology_diagram.sql` creates diagram versions and symbol bindings. `008_topology_links.sql` creates link bindings. Both apply when the API starts. Diagram saves may be up to 12 MB of mxfile text; other request bodies stay at 1 MB. No production deploy is part of this change.
 
 ## What is still limited
 
