@@ -136,12 +136,14 @@ func (s *Store) Summary(ctx context.Context, orgID, orgName, siteID string) (Sum
 					  AND d.connector_id IS NOT NULL
 					  AND (c.id IS NULL OR c.last_heartbeat_at IS NULL OR c.last_heartbeat_at < now() - interval '90 seconds')),
 				(SELECT COUNT(*) FROM devices WHERE organization_id = $1 AND lifecycle = 'active' AND ($2 = '' OR site_id::text = $2) AND data_origin IN ('simulator', 'seed')),
-				(SELECT COUNT(*) FROM drift_findings WHERE organization_id = $1 AND disposition = 'open'),
+				(SELECT COUNT(*) FROM drift_findings f
+					JOIN devices d ON d.organization_id = f.organization_id AND d.id = f.device_id
+					WHERE f.organization_id = $1 AND f.disposition = 'open' AND ($2 = '' OR d.site_id::text = $2)),
 				(SELECT COUNT(*) FROM change_requests WHERE organization_id = $1 AND status IN ('validated','approved','queued','applying','verifying','partial','compensating','unknown')),
 				(SELECT COUNT(*) FROM change_requests WHERE organization_id = $1 AND status IN ('failed', 'rollback_failed')),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND health = 'healthy' AND lifecycle = 'active' AND ($2 = '' OR site_id::text = $2)),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND lifecycle <> 'archived' AND ($2 = '' OR site_id::text = $2)),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND lifecycle = 'active' AND revoked_at IS NULL AND ($2 = '' OR site_id::text = $2) AND last_heartbeat_at IS NOT NULL AND last_heartbeat_at < now() - interval '90 seconds'),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND adapter <> 'simulator' AND lifecycle = 'active' AND revoked_at IS NULL AND health = 'healthy' AND last_heartbeat_at >= now() - interval '90 seconds' AND ($2 = '' OR site_id::text = $2)),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND adapter <> 'simulator' AND lifecycle <> 'archived' AND ($2 = '' OR site_id::text = $2)),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND adapter <> 'simulator' AND lifecycle = 'active' AND revoked_at IS NULL AND ($2 = '' OR site_id::text = $2) AND (last_heartbeat_at IS NULL OR last_heartbeat_at < now() - interval '90 seconds')),
 				(SELECT COUNT(*) FROM discovery_jobs WHERE organization_id = $1 AND ($2 = '' OR site_id::text = $2) AND status IN ('queued', 'running')),
 				(SELECT MAX(finished_at) FROM discovery_jobs WHERE organization_id = $1 AND ($2 = '' OR site_id::text = $2) AND status IN ('completed', 'partial'))
 		`, orgID, siteID).Scan(
