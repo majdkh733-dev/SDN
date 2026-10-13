@@ -21,49 +21,50 @@ var pageCatalog = []string{
 	"connectors", "integrations", "credentials", "audit", "controllers", "settings",
 }
 
+// requiredPages must appear in the default menu. The remaining catalog pages stay
+// reachable by URL, and a saved menu may still include them, but they are not
+// operational navigation: duplicates, or pages that only explain a missing adapter.
+var requiredPages = []string{
+	"command",
+	"sites", "inventory", "interfaces", "topology", "discovery",
+	"incidents", "telemetry", "diagnostics",
+	"backups", "templates", "changes", "drift",
+	"policies", "groups", "vlans", "tenants", "subnets", "routing", "wan",
+	"connectors", "integrations", "credentials", "audit", "controllers", "settings",
+	"reports",
+}
+
 func DefaultNavigation() Navigation {
 	return Navigation{Items: []NavItem{
-		{ID: "command-room", Type: "group", Label: "Command Room", Children: []NavItem{
+		{ID: "dashboard", Type: "group", Label: "Dashboard", Children: []NavItem{
 			{ID: "command", Type: "page", Page: "command"},
 		}},
-		{ID: "infrastructure", Type: "group", Label: "Network Infrastructure", Children: []NavItem{
+		{ID: "network", Type: "group", Label: "Network", Children: []NavItem{
 			{ID: "sites", Type: "page", Page: "sites"},
 			{ID: "inventory", Type: "page", Page: "inventory"},
-			{ID: "interfaces", Type: "page", Page: "interfaces"},
-			{ID: "endpoints", Type: "page", Page: "endpoints"},
 			{ID: "topology", Type: "page", Page: "topology"},
 			{ID: "discovery", Type: "page", Page: "discovery"},
+			{ID: "interfaces", Type: "page", Page: "interfaces"},
 		}},
-		{ID: "connectivity", Type: "group", Label: "Networks & Connectivity", Children: []NavItem{
-			{ID: "vlans", Type: "page", Page: "vlans"},
-			{ID: "tenants", Type: "page", Page: "tenants"},
-			{ID: "subnets", Type: "page", Page: "subnets"},
-			{ID: "routing", Type: "page", Page: "routing"},
-			{ID: "fabric", Type: "page", Page: "fabric"},
-			{ID: "wan", Type: "page", Page: "wan"},
-		}},
-		{ID: "segmentation", Type: "group", Label: "Policies & Segmentation", Children: []NavItem{
-			{ID: "policies", Type: "page", Page: "policies"},
-			{ID: "groups", Type: "page", Page: "groups"},
-			{ID: "qos", Type: "page", Page: "qos"},
-			{ID: "validation", Type: "page", Page: "validation"},
-		}},
-		{ID: "automation", Type: "group", Label: "Automation", Children: []NavItem{
-			{ID: "templates", Type: "page", Page: "templates"},
-			{ID: "provisioning", Type: "page", Page: "provisioning"},
-			{ID: "backups", Type: "page", Page: "backups"},
-			{ID: "drift", Type: "page", Page: "drift"},
-			{ID: "changes", Type: "page", Page: "changes"},
-			{ID: "firmware", Type: "page", Page: "firmware"},
-		}},
-		{ID: "assurance-group", Type: "group", Label: "Assurance", Children: []NavItem{
-			{ID: "assurance", Type: "page", Page: "assurance"},
+		{ID: "monitoring", Type: "group", Label: "Monitoring", Children: []NavItem{
 			{ID: "incidents", Type: "page", Page: "incidents"},
 			{ID: "telemetry", Type: "page", Page: "telemetry"},
 			{ID: "diagnostics", Type: "page", Page: "diagnostics"},
 		}},
-		{ID: "reports-group", Type: "group", Label: "Reports & Compliance", Children: []NavItem{
-			{ID: "reports", Type: "page", Page: "reports"},
+		{ID: "configuration", Type: "group", Label: "Configuration", Children: []NavItem{
+			{ID: "backups", Type: "page", Page: "backups"},
+			{ID: "templates", Type: "page", Page: "templates"},
+			{ID: "changes", Type: "page", Page: "changes"},
+			{ID: "drift", Type: "page", Page: "drift"},
+		}},
+		{ID: "policy-group", Type: "group", Label: "Policies", Children: []NavItem{
+			{ID: "policies", Type: "page", Page: "policies"},
+			{ID: "groups", Type: "page", Page: "groups"},
+			{ID: "vlans", Type: "page", Page: "vlans"},
+			{ID: "subnets", Type: "page", Page: "subnets"},
+			{ID: "routing", Type: "page", Page: "routing"},
+			{ID: "wan", Type: "page", Page: "wan"},
+			{ID: "tenants", Type: "page", Page: "tenants"},
 		}},
 		{ID: "administration", Type: "group", Label: "Administration", Children: []NavItem{
 			{ID: "connectors", Type: "page", Page: "connectors"},
@@ -72,6 +73,9 @@ func DefaultNavigation() Navigation {
 			{ID: "audit", Type: "page", Page: "audit"},
 			{ID: "controllers", Type: "page", Page: "controllers"},
 			{ID: "settings", Type: "page", Page: "settings"},
+		}},
+		{ID: "reports-group", Type: "group", Label: "Reports", Children: []NavItem{
+			{ID: "reports", Type: "page", Page: "reports"},
 		}},
 	}}
 }
@@ -241,7 +245,7 @@ func ValidateNavigation(nav Navigation) error {
 	if err := walk(nav.Items, 0); err != nil {
 		return err
 	}
-	for _, page := range pageCatalog {
+	for _, page := range requiredPages {
 		if !seen["page:"+page] {
 			return apierr.Invalid("page " + page + " is missing; removing a group must not delete its pages")
 		}
@@ -250,6 +254,9 @@ func ValidateNavigation(nav Navigation) error {
 }
 
 func ReconcileNavigation(saved Navigation) Navigation {
+	if previousDefaultNavigation(saved) {
+		return DefaultNavigation()
+	}
 	filtered := filterKnown(saved.Items)
 	present := map[string]bool{}
 	var mark func([]NavItem)
@@ -262,7 +269,7 @@ func ReconcileNavigation(saved Navigation) Navigation {
 		}
 	}
 	mark(filtered)
-	for _, page := range pageCatalog {
+	for _, page := range requiredPages {
 		if present[page] {
 			continue
 		}
@@ -273,6 +280,24 @@ func ReconcileNavigation(saved Navigation) Navigation {
 		return DefaultNavigation()
 	}
 	return nav
+}
+
+func previousDefaultNavigation(saved Navigation) bool {
+	previous := map[string]bool{
+		"command-room": true, "infrastructure": true, "connectivity": true, "segmentation": true,
+		"automation": true, "assurance-group": true, "reports-group": true, "administration": true,
+	}
+	if len(saved.Items) != len(previous) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, item := range saved.Items {
+		if item.Type != "group" || !previous[item.ID] || seen[item.ID] {
+			return false
+		}
+		seen[item.ID] = true
+	}
+	return len(seen) == len(previous)
 }
 
 func filterKnown(items []NavItem) []NavItem {

@@ -35,7 +35,7 @@ SNMPv3, host-key checks, and TLS device sessions are not implemented because tho
 
 ## Navigation
 
-The default sidebar groups are Command Room, Network Infrastructure, Networks & Connectivity, Policies & Segmentation, Automation, Assurance, Reports & Compliance, and Administration. Saved navigation that is missing a new page is filled in without discarding a custom label or order. Reset restores the default. Hiding a page does not change API authorization.
+The default sidebar groups are Dashboard, Network, Monitoring, Configuration, Policies, Administration, and Reports. A saved menu that still has the previous eight group ids is replaced with this catalog. A custom group is kept. A saved menu that is missing a required page is filled in without discarding a custom label or order. Routes for firmware, QoS, endpoints, and the duplicate fabric, provisioning, validation, and assurance pages stay available, and they are not added back into the default menu. Reset restores the default. Hiding a page does not change API authorization.
 
 Old paths still work: `/inventory`, `/desired` (redirects to `/drift`), `/devices` (redirects to `/inventory`), `/platform` (redirects to `/controllers`).
 

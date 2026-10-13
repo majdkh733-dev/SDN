@@ -34,6 +34,45 @@ func TestReconcileKeepsCustomOrder(t *testing.T) {
 	}
 }
 
+func TestDefaultNavigationOmitsUnimplementedPages(t *testing.T) {
+	seen := map[string]bool{}
+	var walk func([]NavItem)
+	walk = func(items []NavItem) {
+		for _, item := range items {
+			if item.Type == "page" {
+				seen[item.Page] = true
+			}
+			walk(item.Children)
+		}
+	}
+	walk(DefaultNavigation().Items)
+	for _, page := range []string{"firmware", "qos", "endpoints", "fabric", "provisioning", "validation", "assurance"} {
+		if seen[page] {
+			t.Fatalf("default navigation still lists %s", page)
+		}
+	}
+	if err := ValidateNavigation(DefaultNavigation()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPreviousDefaultBecomesDashboardNavigation(t *testing.T) {
+	saved := Navigation{Items: []NavItem{
+		{ID: "command-room", Type: "group", Label: "Command Room", Children: []NavItem{{ID: "command", Type: "page", Page: "command"}}},
+		{ID: "infrastructure", Type: "group", Label: "Network Infrastructure", Children: []NavItem{{ID: "sites", Type: "page", Page: "sites"}}},
+		{ID: "connectivity", Type: "group", Label: "Networks & Connectivity", Children: []NavItem{{ID: "vlans", Type: "page", Page: "vlans"}}},
+		{ID: "segmentation", Type: "group", Label: "Policies & Segmentation", Children: []NavItem{{ID: "policies", Type: "page", Page: "policies"}}},
+		{ID: "automation", Type: "group", Label: "Automation", Children: []NavItem{{ID: "changes", Type: "page", Page: "changes"}}},
+		{ID: "assurance-group", Type: "group", Label: "Assurance", Children: []NavItem{{ID: "incidents", Type: "page", Page: "incidents"}}},
+		{ID: "reports-group", Type: "group", Label: "Reports & Compliance", Children: []NavItem{{ID: "reports", Type: "page", Page: "reports"}}},
+		{ID: "administration", Type: "group", Label: "Administration", Children: []NavItem{{ID: "settings", Type: "page", Page: "settings"}}},
+	}}
+	got := ReconcileNavigation(saved)
+	if got.Items[0].Label != "Dashboard" || got.Items[1].Label != "Network" {
+		t.Fatalf("previous catalog was not replaced: %#v", got.Items[0])
+	}
+}
+
 func TestThemeContrast(t *testing.T) {
 	theme := DefaultTheme()
 	theme.Preset = "custom"

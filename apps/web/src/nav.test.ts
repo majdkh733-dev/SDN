@@ -13,17 +13,26 @@ describe("default navigation", () => {
   it("uses the enterprise groups and keeps topology beside the command room", () => {
     const groups = defaultNavigation();
     expect(groups.map((item) => item.label)).toEqual([
-      "Command Room",
-      "Network Infrastructure",
-      "Networks & Connectivity",
-      "Policies & Segmentation",
-      "Automation",
-      "Assurance",
-      "Reports & Compliance",
+      "Dashboard",
+      "Network",
+      "Monitoring",
+      "Configuration",
+      "Policies",
       "Administration",
+      "Reports",
     ]);
     const pages = groups.flatMap((item) => item.children ?? []).map((item) => item.page);
-    expect(pages).toEqual(expect.arrayContaining(["command", "topology", "incidents"]));
+    expect(pages).toEqual([
+      "command",
+      "sites", "inventory", "topology", "discovery", "interfaces",
+      "incidents", "telemetry", "diagnostics",
+      "backups", "templates", "changes", "drift",
+      "policies", "groups", "vlans", "subnets", "routing", "wan", "tenants",
+      "connectors", "integrations", "credentials", "audit", "controllers", "settings",
+      "reports",
+    ]);
+    expect(pages).not.toContain("firmware");
+    expect(pages).not.toContain("qos");
   });
 });
 

@@ -9,16 +9,24 @@ type Summary = {
   organization: string;
   sites: number;
   devices: number;
+  devices_online: number;
+  devices_offline: number;
+  devices_unknown: number;
+  devices_stale: number;
+  devices_simulated: number;
   open_drift: number;
   active_changes: number;
+  failed_changes: number;
   connectors_healthy: number;
   connectors_total: number;
+  discovery_active: number;
+  last_collection?: string;
   notice: string;
-  workloads_available: boolean;
   workloads_note: string;
-  availability_available: boolean;
   availability_note: string;
+  telemetry_note: string;
   alerts: number;
+  site_id?: string;
 };
 
 type Incident = { id: string; severity: string; title: string; site: string; at?: string; href: string; detail: string };
@@ -30,13 +38,15 @@ type Site = { id: string; name: string; location: string; latitude?: number; lon
 export function CommandPage() {
   const t = useT();
   const [query, setQuery] = useState("");
+  const [site, setSite] = useState("");
+  const [alertsOpen, setAlertsOpen] = useState(true);
   const [lens, setLens] = useState<"diagram" | "geo">("diagram");
-  const sites = useQuery({
-    queryKey: ["sites"],
-    queryFn: () => api<Site[]>("/api/v1/sites"),
-    enabled: lens === "geo",
+  const sites = useQuery({ queryKey: ["sites"], queryFn: () => api<Site[]>("/api/v1/sites") });
+  const summary = useQuery({
+    queryKey: ["summary", site],
+    queryFn: () => api<Summary>(`/api/v1/command-room/summary?site_id=${encodeURIComponent(site)}`),
+    refetchInterval: 15000,
   });
-  const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/api/v1/command-room/summary"), refetchInterval: 15000 });
   const incidents = useQuery({ queryKey: ["incidents"], queryFn: () => api<Incident[]>("/api/v1/command-room/incidents"), refetchInterval: 15000 });
   const changes = useQuery({ queryKey: ["changes", "recent"], queryFn: () => api<Change[]>("/api/v1/changes") });
   const hits = useQuery({
@@ -44,6 +54,8 @@ export function CommandPage() {
     queryFn: () => api<SearchHit>(`/api/v1/search?q=${encodeURIComponent(query)}`),
     enabled: query.trim().length > 1,
   });
+  const siteName = sites.data?.find((item) => item.id === site)?.name || "";
+  const visibleIncidents = (incidents.data ?? []).filter((item) => !siteName || item.site === siteName);
   return (
     <div className="command-room">
       <header className="command-top">
@@ -63,18 +75,30 @@ export function CommandPage() {
             </div>
           ) : null}
         </label>
-        <a className="secondary alerts-link" href="#incidents">{t("alerts")} {summary.data?.alerts ?? ""}</a>
+        <label className="field">{t("site")}
+          <select value={site} onChange={(event) => setSite(event.target.value)}>
+            <option value="">{t("allSites")}</option>
+            {(sites.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <button type="button" className="secondary alerts-link" aria-expanded={alertsOpen} onClick={() => setAlertsOpen((open) => !open)}>{t("alerts")} {summary.data?.alerts ?? ""}</button>
       </header>
       <QueryState loading={summary.isLoading} error={summary.error} onRetry={() => summary.refetch()}>
         {summary.data ? (
           <>
             <p className="banner">{summary.data.notice}</p>
             <div className="kpi">
-              <article className="card"><strong>{summary.data.devices}</strong><span>{t("devices")}</span></article>
-              <article className="card"><strong>{t("unavailable")}</strong><span>{t("workloads")}</span><p className="note">{summary.data.workloads_note}</p></article>
-              <article className="card"><strong>{t("unavailable")}</strong><span>{t("availability")}</span><p className="note">{summary.data.availability_note}</p></article>
-              <article className="card"><strong>{summary.data.alerts}</strong><span>{t("alerts")}</span></article>
+              <article className="card"><strong>{summary.data.devices_online}</strong><span>{t("online")}</span></article>
+              <article className="card"><strong>{summary.data.devices_offline}</strong><span>{t("offline")}</span></article>
+              <article className="card"><strong>{summary.data.devices_unknown}</strong><span>{t("unknown")}</span></article>
+              <article className="card"><strong>{summary.data.devices_stale}</strong><span>{t("telemetryStale")}</span></article>
+              <article className="card"><strong>{summary.data.devices_simulated}</strong><span>{t("simulated")}</span><p className="note">{t("simulatorSeparate")}</p></article>
+              <article className="card"><strong>{summary.data.connectors_healthy}/{summary.data.connectors_total}</strong><span>{t("connectors")}</span><p className="note">{summary.data.last_collection ? formatTime(summary.data.last_collection) : t("noCollection")}</p></article>
+              <article className="card"><strong>{summary.data.discovery_active}</strong><span>{t("discovery")}</span></article>
+              <article className="card"><strong>{summary.data.open_drift}</strong><span>{t("drift")}</span></article>
+              <article className="card"><strong>{summary.data.failed_changes}</strong><span>{t("failedChanges")}</span><p className="note">{t("orgWide")}</p></article>
             </div>
+            <p className="note">{summary.data.telemetry_note} {summary.data.workloads_note} {summary.data.availability_note}</p>
           </>
         ) : null}
       </QueryState>
@@ -91,10 +115,10 @@ export function CommandPage() {
         </section>
         <aside className="panel rail">
           <h2 id="incidents">{t("incidents")}</h2>
-          <QueryState loading={incidents.isLoading} error={incidents.error} onRetry={() => incidents.refetch()}>
-            {(incidents.data ?? []).length === 0 ? <Empty text={t("empty")} /> : (
+          {alertsOpen ? <QueryState loading={incidents.isLoading} error={incidents.error} onRetry={() => incidents.refetch()}>
+            {visibleIncidents.length === 0 ? <Empty text={t("empty")} /> : (
               <ul className="incident-list">
-                {(incidents.data ?? []).map((item) => (
+                {visibleIncidents.map((item) => (
                   <li key={item.id}>
                     <Badge value={item.severity} />
                     <Link to={item.href}>{item.title}</Link>
@@ -104,7 +128,7 @@ export function CommandPage() {
                 ))}
               </ul>
             )}
-          </QueryState>
+          </QueryState> : <p className="note">{t("alertsCollapsed")}</p>}
           <p className="note">{t("diagramDetails")}</p>
         </aside>
       </div>

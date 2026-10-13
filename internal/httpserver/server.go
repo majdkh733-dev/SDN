@@ -440,7 +440,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sum, err := s.Store.Summary(r.Context(), p.Organization.OrganizationID, p.Organization.OrganizationName)
+	sum, err := s.Store.Summary(r.Context(), p.Organization.OrganizationID, p.Organization.OrganizationName, strings.TrimSpace(r.URL.Query().Get("site_id")))
 	if err != nil {
 		writeErr(w, err)
 		return

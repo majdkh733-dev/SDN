@@ -12,14 +12,14 @@ type Site = { id: string; name: string };
 type Install = { method: string; available: boolean; reason?: string; prerequisites?: string[]; command?: string; uninstall?: string };
 type Job = { id: string; status: string; error: string; discovered_count: number; created_at: string };
 
-const methods = ["docker", "linux", "compose", "helm", "aws", "windows"];
+const methods = ["docker", "compose", "linux"];
 
 export function ConnectorsPage() {
   const t = useT();
   const { principal } = useOutletContext<{ principal: Principal }>();
   const qc = useQueryClient();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: "", site_id: "", description: "", deployment_method: "docker", adapter: "site" });
+  const [form, setForm] = useState({ name: "", site_id: "", description: "", deployment_method: "docker", adapter: "site", collection: "site" });
   const [created, setCreated] = useState<Connector | null>(null);
   const [token, setToken] = useState("");
   const [install, setInstall] = useState<Install | null>(null);
@@ -89,16 +89,23 @@ export function ConnectorsPage() {
                       {(sites.data ?? []).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
                     </select>
                   </Field>
+                  <Field label={t("collection")}>
+                    <select value={form.collection} onChange={(e) => setForm({ ...form, collection: e.target.value, adapter: e.target.value === "simulator" ? "simulator" : "site" })}>
+                      <option value="site">{t("siteConnector")}</option>
+                      <option value="simulator">{t("labSimulator")}</option>
+                    </select>
+                  </Field>
+                  <p className="note">{form.collection === "simulator" ? t("labSimulatorNote") : t("siteConnectorNote")}</p>
                   <Field label={t("detail")}><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
                 </>
               ) : (
                 <div className="method-grid">
-                  {methods.map((method) => (
+                  {form.collection === "simulator" ? <p className="note">{t("labSimulatorInstall")}</p> : methods.map((method) => (
                     <button key={method} type="button" className="secondary" aria-pressed={form.deployment_method === method} onClick={() => setForm({ ...form, deployment_method: method })}>
                       {method}
-                      {method === "helm" || method === "aws" || method === "windows" ? <small>{t("unavailableMethod")}</small> : null}
                     </button>
                   ))}
+                  <p className="note">{t("unavailableInstallers")}</p>
                 </div>
               )}
               <button type="submit" disabled={create.isPending}>{step === 1 ? t("confirm") : t("save")}</button>

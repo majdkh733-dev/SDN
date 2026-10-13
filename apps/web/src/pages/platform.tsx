@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useOutletContext, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useOutletContext, useSearchParams } from "react-router-dom";
 import { api, can, type Principal } from "../api";
 import { Badge, Empty, Field, FormError, Page, QueryState, onSubmit, useT } from "../ui";
 
@@ -98,11 +98,10 @@ export function GroupsPage() {
 
 export function UnsupportedPage({ title, reason }: { title: string; reason: string }) {
   const t = useT();
-  const adapters = useQuery({ queryKey: ["adapters"], queryFn: () => api<Adapter[]>("/api/v1/adapters") });
   return (
     <Page title={title} crumbs={[{ to: "/", label: t("command") }, { label: title }]}>
       <p className="state" role="status">{reason}</p>
-      <AdapterTable rows={adapters.data ?? []} />
+      <p className="note"><Link to="/diagnostics">{t("adapterMatrix")}</Link></p>
     </Page>
   );
 }
@@ -146,7 +145,7 @@ export function ProvisionPage() {
     onSuccess: (item) => { setResult(item); void qc.invalidateQueries({ queryKey: ["vlans"] }); },
   });
   return (
-    <Page title={t("provisioning")} crumbs={[{ to: "/", label: t("command") }, { label: t("provisioning") }]}>
+    <Page title={t("templates")} crumbs={[{ to: "/", label: t("command") }, { label: t("templates") }]}>
       <p className="note">{t("labOnly")} {t("unsupportedAdapter")}</p>
       {can(principal.role, "author") ? (
         <form className="stack" onSubmit={onSubmit(() => propose.mutate())}>
@@ -188,10 +187,13 @@ export function ProvisionPage() {
 
 export function DriftPage() {
   const t = useT();
+  const location = useLocation();
+  const backups = location.pathname.startsWith("/backups");
+  const title = backups ? t("backups") : t("drift");
   const findings = useQuery({ queryKey: ["drift"], queryFn: () => api<{ id: string; disposition: string; difference: { detail?: string; kind?: string } }[]>("/api/v1/drift-findings") });
   const configs = useQuery({ queryKey: ["configs"], queryFn: () => api<{ id: string; role: string; checksum: string; body: string; source: string }[]>("/api/v1/config-revisions") });
   return (
-    <Page title={t("drift")} crumbs={[{ to: "/", label: t("command") }, { label: t("drift") }]}>
+    <Page title={title} crumbs={[{ to: "/", label: t("command") }, { label: title }]}>
       <p className="note">Intended configuration is the baseline saved after a verified change. Observed configuration is the latest collection. A difference is drift only after both exist.</p>
       <h2>{t("drift")}</h2>
       <QueryState loading={findings.isLoading} error={findings.error} onRetry={() => findings.refetch()}>
@@ -211,6 +213,7 @@ export function DiagnosticsPage() {
   const t = useT();
   const principal = usePrincipal();
   const connectors = useQuery({ queryKey: ["connectors"], queryFn: () => api<{ id: string; name: string }[]>("/api/v1/connectors") });
+  const adapters = useQuery({ queryKey: ["adapters"], queryFn: () => api<Adapter[]>("/api/v1/adapters") });
   const [form, setForm] = useState({ connector_id: "", kind: "ping", target: "" });
   const [notice, setNotice] = useState("");
   const run = useMutation({
@@ -240,6 +243,11 @@ export function DiagnosticsPage() {
           {notice ? <p className="note">{notice}</p> : null}
         </form>
       ) : null}
+      <h2>{t("diagnostics")}</h2>
+      <p className="note">{t("adapterMatrix")}</p>
+      <QueryState loading={adapters.isLoading} error={adapters.error} onRetry={() => adapters.refetch()}>
+        <AdapterTable rows={adapters.data ?? []} />
+      </QueryState>
     </Page>
   );
 }

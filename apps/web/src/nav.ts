@@ -45,14 +45,13 @@ export const pageRoutes: Record<string, { to: string; end: boolean }> = {
 
 export function defaultNavigation(): NavItem[] {
   const groups: { id: string; label: string; pages: string[] }[] = [
-    { id: "command-room", label: "Command Room", pages: ["command"] },
-    { id: "infrastructure", label: "Network Infrastructure", pages: ["sites", "inventory", "interfaces", "endpoints", "topology", "discovery"] },
-    { id: "connectivity", label: "Networks & Connectivity", pages: ["vlans", "tenants", "subnets", "routing", "fabric", "wan"] },
-    { id: "segmentation", label: "Policies & Segmentation", pages: ["policies", "groups", "qos", "validation"] },
-    { id: "automation", label: "Automation", pages: ["templates", "provisioning", "backups", "drift", "changes", "firmware"] },
-    { id: "assurance-group", label: "Assurance", pages: ["assurance", "incidents", "telemetry", "diagnostics"] },
-    { id: "reports-group", label: "Reports & Compliance", pages: ["reports"] },
+    { id: "dashboard", label: "Dashboard", pages: ["command"] },
+    { id: "network", label: "Network", pages: ["sites", "inventory", "topology", "discovery", "interfaces"] },
+    { id: "monitoring", label: "Monitoring", pages: ["incidents", "telemetry", "diagnostics"] },
+    { id: "configuration", label: "Configuration", pages: ["backups", "templates", "changes", "drift"] },
+    { id: "policy-group", label: "Policies", pages: ["policies", "groups", "vlans", "subnets", "routing", "wan", "tenants"] },
     { id: "administration", label: "Administration", pages: ["connectors", "integrations", "credentials", "audit", "controllers", "settings"] },
+    { id: "reports-group", label: "Reports", pages: ["reports"] },
   ];
   return groups.map((group) => ({
     id: group.id,

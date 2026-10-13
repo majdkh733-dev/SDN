@@ -1,6 +1,6 @@
 # UTEC reference topology
 
-The Command Room and the Topology page render the same original draw.io model embedded in `UTEC Diagram09-03-26.drawio.png`. The model was URL-decoded from the PNG `mxfile` text chunk and stored at `apps/web/public/drawio/utec.drawio`. Rendering uses the diagrams.net viewer (`viewer-static.min.js`) with the Cisco, network, electrical, Azure, and iOS stencil files the model references. Positions, styles, labels, waypoints, and embedded images come from that file. Neither view runs a force-directed layout. Both views load `GET /api/v1/topology-diagram`, so they show the same saved version and the same bindings.
+The Dashboard and the Topology page render the same original draw.io model embedded in `UTEC Diagram09-03-26.drawio.png`. The model was URL-decoded from the PNG `mxfile` text chunk and stored at `apps/web/public/drawio/utec.drawio`. Rendering uses the diagrams.net viewer (`viewer-static.min.js`) with the Cisco, network, electrical, Azure, and iOS stencil files the model references. Positions, styles, labels, waypoints, and embedded images come from that file. Neither view runs a force-directed layout. Both views load `GET /api/v1/topology-diagram`, so they show the same saved version and the same bindings.
 
 Icon fills such as green, amber, and red are the reference artwork. Operational health is shown only in the detail drawer.
 

@@ -192,7 +192,10 @@ textarea { min-height: 72px; resize: vertical; }
 .eyebrow { margin: 0; color: var(--accent, var(--blue)); font-size: 12px; letter-spacing: 0.14em; }
 .search { position: relative; min-width: min(360px, 100%); }
 .search-results { position: absolute; z-index: 4; inset-inline: 0; top: 100%; background: var(--surface); border: 1px solid var(--line); display: grid; padding: 8px; gap: 4px; }
-.kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 8px; }
+.kpi .card { padding: 8px 10px; }
+.kpi .card strong { font-size: 18px; }
+.kpi .note { margin: 2px 0 0; }
 .command-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
 .map-panel .graph { height: 520px; background:
   radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--blue) 18%, transparent), transparent 42%),
