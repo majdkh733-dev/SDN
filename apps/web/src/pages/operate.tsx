@@ -278,6 +278,7 @@ export function IntegrationsPage() {
             </tbody>
           </table>
         </QueryState>
+        <p className="note"><Link to="/diagnostics">{t("adapterMatrix")}</Link></p>
       </section>
     </Page>
   );

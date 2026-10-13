@@ -102,6 +102,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/devices/{id}/capabilities", s.capabilities)
 	mux.HandleFunc("POST /api/v1/devices/{id}/demo-faults", s.faults)
 	mux.HandleFunc("GET /api/v1/topology", s.topology)
+	mux.HandleFunc("GET /api/v1/topology-diagram", s.topologyDiagram)
+	mux.HandleFunc("POST /api/v1/topology-diagram", s.saveTopologyDiagram)
+	mux.HandleFunc("GET /api/v1/topology-diagram/versions", s.topologyDiagramVersions)
+	mux.HandleFunc("GET /api/v1/topology-diagram/versions/{id}", s.topologyDiagramVersion)
+	mux.HandleFunc("POST /api/v1/topology-diagram/bindings", s.setTopologyBinding)
+	mux.HandleFunc("POST /api/v1/topology-diagram/links", s.setTopologyLink)
 	mux.HandleFunc("GET /api/v1/fabrics", s.listFabrics)
 	mux.HandleFunc("POST /api/v1/fabrics", s.createFabric)
 	mux.HandleFunc("GET /api/v1/tenants", s.listTenants)
@@ -131,6 +137,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/audit-events", s.audit)
 	mux.HandleFunc("GET /api/v1/controllers/status", s.controllers)
 	mux.HandleFunc("GET /api/v1/integrations", s.integrations)
+	mux.HandleFunc("GET /api/v1/adapters", s.adapters)
+	mux.HandleFunc("POST /api/v1/provisioning/vlan", s.proposeVLAN)
+	mux.HandleFunc("GET /api/v1/interfaces", s.listInterfaces)
+	mux.HandleFunc("GET /api/v1/endpoints", s.listEndpoints)
+	mux.HandleFunc("GET /api/v1/vlans", s.listVLANs)
+	mux.HandleFunc("GET /api/v1/config-revisions", s.configRevisions)
+	mux.HandleFunc("POST /api/v1/devices/{id}/config/collect", s.collectConfig)
+	mux.HandleFunc("POST /api/v1/devices/{id}/lab/overlay", s.simulatorOverlay)
+	mux.HandleFunc("POST /api/v1/diagnostics", s.diagnostics)
+	mux.HandleFunc("GET /api/v1/reports/availability", s.availability)
+	mux.HandleFunc("GET /api/v1/service-accounts", s.serviceAccounts)
+	mux.HandleFunc("POST /api/v1/service-accounts", s.serviceAccounts)
+	mux.HandleFunc("POST /api/v1/service-accounts/{id}/revoke", s.revokeServiceAccount)
 	mux.HandleFunc("GET /api/v1/memberships", s.memberships)
 	mux.HandleFunc("POST /api/v1/memberships", s.addMembership)
 	mux.HandleFunc("POST /api/v1/maintenance/retention", s.retention)
@@ -161,7 +180,11 @@ func (s *Server) wrap(next http.Handler) http.Handler {
 			writeErr(w, apierr.Forbidden("origin is not allowed"))
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		limit := int64(1 << 20)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/topology-diagram" {
+			limit = 16 << 20
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		requestID, _ := authn.NewToken()
 		requestID = requestID[:12]
 		w.Header().Set("X-Request-Id", requestID)
@@ -185,12 +208,42 @@ func (s *Server) sameSite() http.SameSite {
 }
 
 func (s *Server) originAllowed(origin string) bool {
-	for _, allowed := range s.Config.AllowedOrigins {
-		if origin == allowed {
+	return originPermitted(s.Config.AllowedOrigins, s.Config.PublicAPIBase, origin)
+}
+
+func originPermitted(allowed []string, publicBase, origin string) bool {
+	for _, item := range allowed {
+		if origin == item {
 			return true
 		}
 	}
-	return origin == s.Config.PublicAPIBase
+	if origin == publicBase {
+		return true
+	}
+	return sdnConsoleOrigin(origin)
+}
+
+func sdnConsoleOrigin(origin string) bool {
+	host, ok := httpsHost(origin)
+	if !ok {
+		return false
+	}
+	if host == "sdn-psi.vercel.app" {
+		return true
+	}
+	return strings.HasPrefix(host, "sdn-git-") && strings.HasSuffix(host, "-majd-6c6d.vercel.app")
+}
+
+func httpsHost(origin string) (string, bool) {
+	const prefix = "https://"
+	if !strings.HasPrefix(origin, prefix) {
+		return "", false
+	}
+	host := strings.TrimPrefix(origin, prefix)
+	if host == "" || strings.ContainsAny(host, "/?#@") {
+		return "", false
+	}
+	return host, true
 }
 
 func (s *Server) allowedRedirect(uri string) bool {
@@ -337,6 +390,14 @@ func publicPrincipal(p store.Principal) map[string]any {
 }
 
 func (s *Server) principal(r *http.Request) (store.Principal, error) {
+	if header := r.Header.Get("Authorization"); strings.HasPrefix(header, "Bearer ") {
+		token := strings.TrimPrefix(header, "Bearer ")
+		if token != "" && r.URL.Path != "/api/v1/agent/enroll" && !strings.HasPrefix(r.URL.Path, "/api/v1/agent/") {
+			if p, err := s.Store.PrincipalFromServiceToken(r.Context(), token); err == nil {
+				return p, nil
+			}
+		}
+	}
 	p, _, err := s.rawSession(r)
 	return p, err
 }
@@ -379,7 +440,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sum, err := s.Store.Summary(r.Context(), p.Organization.OrganizationID, p.Organization.OrganizationName)
+	sum, err := s.Store.Summary(r.Context(), p.Organization.OrganizationID, p.Organization.OrganizationName, strings.TrimSpace(r.URL.Query().Get("site_id")))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1215,6 +1276,7 @@ func (s *Server) agentComplete(w http.ResponseWriter, r *http.Request) {
 		Error        string                     `json:"error"`
 		Discovery    adapter.Discovery          `json:"discovery"`
 		Observations []store.InboundObservation `json:"observations"`
+		Result       json.RawMessage            `json:"result"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, err)
@@ -1251,7 +1313,11 @@ func (s *Server) agentComplete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.Store.CompleteTask(r.Context(), ident.OrganizationID, r.PathValue("id"), map[string]any{"ok": body.OK}, body.OK); err != nil {
+	stored := map[string]any{"ok": body.OK, "error": body.Error}
+	if len(body.Result) > 0 {
+		stored["result"] = json.RawMessage(body.Result)
+	}
+	if err := s.Store.CompleteTask(r.Context(), ident.OrganizationID, r.PathValue("id"), stored, body.OK); err != nil {
 		writeErr(w, err)
 		return
 	}

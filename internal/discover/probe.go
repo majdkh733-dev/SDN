@@ -146,6 +146,11 @@ func tcpProbe(ctx context.Context, ip string, port int, timeout time.Duration) M
 	return Method{Method: "tcp", OK: true, Port: port, Detail: "connected"}
 }
 
+// Ping is the connector diagnostic. A missing reply is not proof the host does not exist.
+func Ping(ctx context.Context, ip string, timeout time.Duration) Method {
+	return icmpPing(ctx, ip, timeout)
+}
+
 func icmpPing(ctx context.Context, ip string, timeout time.Duration) Method {
 	if _, err := exec.LookPath("ping"); err != nil {
 		return Method{Method: "icmp", OK: false, Detail: "ping is not installed"}

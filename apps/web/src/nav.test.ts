@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dissolveGroup, dropPage, movePage, reparent, type NavItem } from "./nav";
+import { defaultNavigation, dissolveGroup, dropPage, movePage, reparent, type NavItem } from "./nav";
 
 const tree: NavItem[] = [
   { id: "command", type: "page", page: "command" },
@@ -8,6 +8,33 @@ const tree: NavItem[] = [
     { id: "inventory", type: "page", page: "inventory" },
   ] },
 ];
+
+describe("default navigation", () => {
+  it("uses the enterprise groups and keeps topology beside the command room", () => {
+    const groups = defaultNavigation();
+    expect(groups.map((item) => item.label)).toEqual([
+      "Dashboard",
+      "Network",
+      "Monitoring",
+      "Configuration",
+      "Policies",
+      "Administration",
+      "Reports",
+    ]);
+    const pages = groups.flatMap((item) => item.children ?? []).map((item) => item.page);
+    expect(pages).toEqual([
+      "command",
+      "sites", "inventory", "topology", "discovery", "interfaces",
+      "incidents", "telemetry", "diagnostics",
+      "backups", "templates", "changes", "drift",
+      "policies", "groups", "vlans", "subnets", "routing", "wan", "tenants",
+      "connectors", "integrations", "credentials", "audit", "controllers", "settings",
+      "reports",
+    ]);
+    expect(pages).not.toContain("firmware");
+    expect(pages).not.toContain("qos");
+  });
+});
 
 describe("navigation edits", () => {
   it("reorders, reparents, and keeps pages when a group is removed", () => {

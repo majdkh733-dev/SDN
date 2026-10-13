@@ -61,12 +61,31 @@ Status reflects the code in this repository, not a production deployment.
 - [ ] Vercel deployment URL
 - [ ] Production launch (API, external OIDC, storage, connectors, and workflows verified on the target network)
 
-## Site connectors and Command Room
+## Site connectors and Dashboard
 
 - [x] One-time enrollment, revocable connector credential, heartbeat, and site-scoped job lease
 - [x] Docker, Compose, and Linux install paths; other platforms labeled unavailable
 - [x] Bounded local discovery (ICMP, ARP, TCP, DNS, optional SNMP) and inventory import without duplicate identity keys
 - [x] Company navigation and theme preferences
-- [x] Command Room topology, incidents, and Policy Studio scope handoff
+- [x] Dashboard topology, incidents, and Policies scope handoff
 - [x] Connector lifecycle test (`TestConnectorDiscoveryLifecycle`) and agent probe test
 - [ ] Physical device or vendor API collection outside this environment
+
+## Operations platform
+
+- [x] Default navigation matches the operations groups, and older saved trees keep custom order while gaining missing pages
+- [x] Adapter support matrix (`GET /api/v1/adapters`)
+- [x] Simulator VLAN change: baseline check, approval, verify, rollback row delete, and later config drift (`TestVLANChangeVerifyAndDrift`)
+- [x] Service account token issue and revocation
+- [x] Connector ping and DNS diagnostics queued as agent tasks
+- [ ] SSH, NETCONF, RESTCONF, gNMI, SNMPv3, and vendor configuration write
+- [ ] Historical availability, flow telemetry, and firmware lifecycle data
+- [ ] Live switch lab for the VLAN workflow
+
+## Reference topology
+
+- [x] UTEC draw.io source recovered from the PNG `mxfile` chunk and rendered with the diagrams.net viewer and its stencil files
+- [x] Dashboard and Topology share that diagram, its saved version, and its bindings
+- [x] Device and link selection, inventory binding, link-to-interface mapping, and saved diagram versions (`TestTopologyDiagramBindingIsolation`)
+- [ ] Stylized logo text for SS and Al Kharj is artwork, not a separate text cell; OCR did not read those two wordmarks reliably
+- [ ] Reference symbols are not pre-bound to the UTEC network. Demo inventory can be linked manually; that is not live UTEC telemetry

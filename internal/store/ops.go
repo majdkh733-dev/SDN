@@ -74,41 +74,85 @@ func (s *Store) ListAudit(ctx context.Context, orgID, action string) ([]AuditEve
 }
 
 type Summary struct {
-	Organization          string `json:"organization"`
-	Sites                 int    `json:"sites"`
-	Devices               int    `json:"devices"`
-	OpenDrift             int    `json:"open_drift"`
-	ActiveChanges         int    `json:"active_changes"`
-	ConnectorsHealthy     int    `json:"connectors_healthy"`
-	ConnectorsTotal       int    `json:"connectors_total"`
-	Notice                string `json:"notice"`
-	WorkloadsAvailable    bool   `json:"workloads_available"`
-	WorkloadsNote         string `json:"workloads_note"`
-	AvailabilityAvailable bool   `json:"availability_available"`
-	AvailabilityNote      string `json:"availability_note"`
-	Alerts                int    `json:"alerts"`
+	Organization          string     `json:"organization"`
+	Sites                 int        `json:"sites"`
+	Devices               int        `json:"devices"`
+	OpenDrift             int        `json:"open_drift"`
+	ActiveChanges         int        `json:"active_changes"`
+	ConnectorsHealthy     int        `json:"connectors_healthy"`
+	ConnectorsTotal       int        `json:"connectors_total"`
+	Notice                string     `json:"notice"`
+	WorkloadsAvailable    bool       `json:"workloads_available"`
+	WorkloadsNote         string     `json:"workloads_note"`
+	AvailabilityAvailable bool       `json:"availability_available"`
+	AvailabilityNote      string     `json:"availability_note"`
+	Alerts                int        `json:"alerts"`
+	DevicesOnline         int        `json:"devices_online"`
+	DevicesOffline        int        `json:"devices_offline"`
+	DevicesUnknown        int        `json:"devices_unknown"`
+	DevicesStale          int        `json:"devices_stale"`
+	DevicesSimulated      int        `json:"devices_simulated"`
+	DiscoveryActive       int        `json:"discovery_active"`
+	FailedChanges         int        `json:"failed_changes"`
+	LastCollection        *time.Time `json:"last_collection,omitempty"`
+	SiteID                string     `json:"site_id,omitempty"`
+	TelemetryNote         string     `json:"telemetry_note"`
 }
 
-func (s *Store) Summary(ctx context.Context, orgID, orgName string) (Summary, error) {
+func (s *Store) Summary(ctx context.Context, orgID, orgName, siteID string) (Summary, error) {
 	sum := Summary{
-		Organization: orgName, Notice: "Demonstration inventory is produced by the simulator unless a site agent reports an observation. Connector status is separate from device status.",
+		Organization: orgName, SiteID: siteID,
+		Notice:           "Demonstration inventory is produced by the simulator unless a site agent reports an observation. Connector status is separate from device status. Simulator health is not production health.",
 		WorkloadsNote:    "Workload collection is not implemented. No count is shown.",
 		AvailabilityNote: "Availability history is not collected. No percentage is shown.",
+		TelemetryNote:    "Interface counters are not collected. A device whose connector has no heartbeat in the last 90 seconds is stale, including when the last stored health was healthy. Simulator and seed inventory is excluded from those four counts.",
 	}
-	var offline int
+	var offlineConnectors int
 	err := s.WithOrg(ctx, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT
-				(SELECT COUNT(*) FROM sites WHERE organization_id = $1 AND lifecycle = 'active'),
-				(SELECT COUNT(*) FROM devices WHERE organization_id = $1 AND lifecycle = 'active'),
-				(SELECT COUNT(*) FROM drift_findings WHERE organization_id = $1 AND disposition = 'open'),
+				(SELECT COUNT(*) FROM sites WHERE organization_id = $1 AND lifecycle = 'active' AND ($2 = '' OR id::text = $2)),
+				(SELECT COUNT(*) FROM devices WHERE organization_id = $1 AND lifecycle = 'active' AND ($2 = '' OR site_id::text = $2)),
+				(SELECT COUNT(*) FROM devices d
+					LEFT JOIN connectors c ON c.id = d.connector_id
+					WHERE d.organization_id = $1 AND d.lifecycle = 'active' AND ($2 = '' OR d.site_id::text = $2)
+					  AND d.data_origin NOT IN ('simulator', 'seed') AND d.health = 'healthy'
+					  AND NOT (d.connector_id IS NOT NULL AND (c.id IS NULL OR c.last_heartbeat_at IS NULL OR c.last_heartbeat_at < now() - interval '90 seconds'))),
+				(SELECT COUNT(*) FROM devices d
+					LEFT JOIN connectors c ON c.id = d.connector_id
+					WHERE d.organization_id = $1 AND d.lifecycle = 'active' AND ($2 = '' OR d.site_id::text = $2)
+					  AND d.data_origin NOT IN ('simulator', 'seed') AND d.health = 'down'
+					  AND NOT (d.connector_id IS NOT NULL AND (c.id IS NULL OR c.last_heartbeat_at IS NULL OR c.last_heartbeat_at < now() - interval '90 seconds'))),
+				(SELECT COUNT(*) FROM devices d
+					LEFT JOIN connectors c ON c.id = d.connector_id
+					WHERE d.organization_id = $1 AND d.lifecycle = 'active' AND ($2 = '' OR d.site_id::text = $2)
+					  AND d.data_origin NOT IN ('simulator', 'seed')
+					  AND d.health IS DISTINCT FROM 'healthy' AND d.health IS DISTINCT FROM 'down'
+					  AND NOT (d.connector_id IS NOT NULL AND (c.id IS NULL OR c.last_heartbeat_at IS NULL OR c.last_heartbeat_at < now() - interval '90 seconds'))),
+				(SELECT COUNT(*) FROM devices d
+					LEFT JOIN connectors c ON c.id = d.connector_id
+					WHERE d.organization_id = $1 AND d.lifecycle = 'active' AND ($2 = '' OR d.site_id::text = $2)
+					  AND d.data_origin NOT IN ('simulator', 'seed')
+					  AND d.connector_id IS NOT NULL
+					  AND (c.id IS NULL OR c.last_heartbeat_at IS NULL OR c.last_heartbeat_at < now() - interval '90 seconds')),
+				(SELECT COUNT(*) FROM devices WHERE organization_id = $1 AND lifecycle = 'active' AND ($2 = '' OR site_id::text = $2) AND data_origin IN ('simulator', 'seed')),
+				(SELECT COUNT(*) FROM drift_findings f
+					JOIN devices d ON d.organization_id = f.organization_id AND d.id = f.device_id
+					WHERE f.organization_id = $1 AND f.disposition = 'open' AND ($2 = '' OR d.site_id::text = $2)),
 				(SELECT COUNT(*) FROM change_requests WHERE organization_id = $1 AND status IN ('validated','approved','queued','applying','verifying','partial','compensating','unknown')),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND health = 'healthy' AND lifecycle = 'active'),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND lifecycle <> 'archived'),
-				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND lifecycle = 'active' AND revoked_at IS NULL AND last_heartbeat_at IS NOT NULL AND last_heartbeat_at < now() - interval '90 seconds')
-		`, orgID).Scan(&sum.Sites, &sum.Devices, &sum.OpenDrift, &sum.ActiveChanges, &sum.ConnectorsHealthy, &sum.ConnectorsTotal, &offline)
+				(SELECT COUNT(*) FROM change_requests WHERE organization_id = $1 AND status IN ('failed', 'rollback_failed')),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND adapter <> 'simulator' AND lifecycle = 'active' AND revoked_at IS NULL AND health = 'healthy' AND last_heartbeat_at >= now() - interval '90 seconds' AND ($2 = '' OR site_id::text = $2)),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND adapter <> 'simulator' AND lifecycle <> 'archived' AND ($2 = '' OR site_id::text = $2)),
+				(SELECT COUNT(*) FROM connectors WHERE organization_id = $1 AND adapter <> 'simulator' AND lifecycle = 'active' AND revoked_at IS NULL AND ($2 = '' OR site_id::text = $2) AND (last_heartbeat_at IS NULL OR last_heartbeat_at < now() - interval '90 seconds')),
+				(SELECT COUNT(*) FROM discovery_jobs WHERE organization_id = $1 AND ($2 = '' OR site_id::text = $2) AND status IN ('queued', 'running')),
+				(SELECT MAX(finished_at) FROM discovery_jobs WHERE organization_id = $1 AND ($2 = '' OR site_id::text = $2) AND status IN ('completed', 'partial'))
+		`, orgID, siteID).Scan(
+			&sum.Sites, &sum.Devices, &sum.DevicesOnline, &sum.DevicesOffline, &sum.DevicesUnknown, &sum.DevicesStale, &sum.DevicesSimulated,
+			&sum.OpenDrift, &sum.ActiveChanges, &sum.FailedChanges, &sum.ConnectorsHealthy, &sum.ConnectorsTotal, &offlineConnectors,
+			&sum.DiscoveryActive, &sum.LastCollection,
+		)
 	})
-	sum.Alerts = sum.OpenDrift + offline
+	sum.Alerts = sum.OpenDrift + offlineConnectors + sum.DevicesOffline
 	return sum, err
 }
 

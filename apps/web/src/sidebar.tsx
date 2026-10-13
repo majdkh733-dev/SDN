@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type DragEvent } from "react";
 import { NavLink } from "react-router-dom";
 import { api, can, type Principal } from "./api";
-import { addGroup, dissolveGroup, dropPage, movePage, pageRoutes, renameGroup, reparent, type NavItem } from "./nav";
+import { addGroup, defaultNavigation, dissolveGroup, dropPage, movePage, pageRoutes, renameGroup, reparent, type NavItem } from "./nav";
 import { message, useT } from "./ui";
 
 type Preferences = { navigation: { items: NavItem[] }; theme: { mode: string; preset: string } };
@@ -15,7 +15,8 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
   const [draft, setDraft] = useState<NavItem[] | null>(null);
   const [label, setLabel] = useState("");
   const [drop, setDrop] = useState<{ id: string; where: "before" | "after" | "into" } | null>(null);
-  const items = draft ?? prefs.data?.navigation.items ?? [];
+  const usingDefault = !draft && !prefs.data && prefs.isError;
+  const items = draft ?? prefs.data?.navigation.items ?? (usingDefault ? defaultNavigation() : []);
   const save = useMutation({
     mutationFn: (next: NavItem[]) => api("/api/v1/preferences/navigation", { method: "POST", body: JSON.stringify({ items: next }) }),
     onSuccess: async () => {
@@ -28,6 +29,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
     mutationFn: () => api("/api/v1/preferences/navigation/reset", { method: "POST", body: "{}" }),
     onSuccess: async () => {
       setDraft(null);
+      setEditing(false);
       await qc.invalidateQueries({ queryKey: ["preferences"] });
     },
   });
@@ -60,7 +62,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
           <summary>
             {editing ? (
               <input aria-label={t("groupLabel")} value={item.label || ""} onChange={(event) => update(renameGroup(items, item.id, event.target.value))} />
-            ) : item.label}
+            ) : groupTitle(t, item.id, item.label || "")}
           </summary>
           <div className="nav-children">
             {(item.children ?? []).map((child) => renderItem(child, depth + 1))}
@@ -103,6 +105,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
   }
   return (
     <nav className="nav" aria-label={t("product")}>
+      {usingDefault ? <p className="note">{t("navFallback")}</p> : null}
       {items.map((item) => renderItem(item, 0))}
       {admin ? (
         <div className="nav-edit">
@@ -115,7 +118,7 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
               <button type="button" onClick={() => draft && save.mutate(draft)} disabled={!draft || save.isPending}>{t("save")}</button>
               <button type="button" className="secondary" onClick={() => { setDraft(null); setEditing(false); }}>{t("cancel")}</button>
               <button type="button" className="secondary" onClick={() => reset.mutate()}>{t("reset")}</button>
-              {save.error ? <p className="state error" role="alert">{message(save.error, t("requestFailed"))}</p> : null}
+              {save.error || reset.error ? <p className="state error" role="alert">{message(save.error || reset.error, t("requestFailed"))}</p> : null}
             </>
           ) : (
             <button type="button" className="secondary" onClick={() => setEditing(true)}>{t("editNav")}</button>
@@ -128,4 +131,10 @@ export function SidebarNav({ principal, onNavigate }: { principal: Principal; on
 
 function NavMark({ page }: { page: string }) {
   return <span className={`nav-mark nav-mark-${page}`} aria-hidden="true" />;
+}
+
+function groupTitle(t: (key: string) => string, id: string, label: string) {
+  const key = "group." + id;
+  const translated = t(key);
+  return translated === key ? label : translated;
 }

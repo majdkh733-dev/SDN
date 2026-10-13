@@ -47,7 +47,11 @@ func SimulatorDiscovery(siteName string) Discovery {
 		SupportNote: "Deterministic simulator. These devices are not forwarding traffic.",
 		Capabilities: []string{
 			"inventory.v1",
+			"interfaces.v1",
 			"acl.v1",
+			"vlan.v1",
+			"config.read.v1",
+			"config.write.v1",
 			"backup.v1",
 		},
 		Devices: []DeviceBlueprint{
