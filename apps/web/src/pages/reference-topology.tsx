@@ -280,7 +280,7 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
           {xml.isError ? <p className="state error" role="alert">{t("diagramFileFailed")}</p> : null}
           <div ref={canvas} className="ref-canvas" />
         </section>
-        <aside className="panel ref-drawer">
+        <aside className={info ? "panel ref-drawer" : "panel ref-drawer empty"}>
           {!info ? <Empty text={t("selectSymbol")} /> : (
             <>
               <h2>{info.label || referenceIcon(info.style) || t("unlabeled")}</h2>
@@ -408,7 +408,7 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
           )}
         </aside>
       </div>
-      <section className="panel">
+      {!embedded ? <><section className="panel">
         <h2>{t("mappingTable")}</h2>
         <p className="note">{t("deviceSymbols")} {mappedDevices.length}/{deviceSymbols.length || "—"} · {t("verifiedLinks")} {verifiedLinks.length}/{linkSymbols.length || "—"} · {t("unresolvedLinks")} {Math.max(linkSymbols.length - verifiedLinks.length, 0)}</p>
         <input value={mapQuery} placeholder={t("search")} onChange={(event) => setMapQuery(event.target.value)} />
@@ -467,7 +467,7 @@ export function ReferenceDiagram({ embedded = false }: { embedded?: boolean }) {
             ))}
           </ul>
         )}
-      </section>
+      </section></> : null}
     </div>
   );
 }

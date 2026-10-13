@@ -83,6 +83,7 @@ export function CommandPage() {
         </label>
         <button type="button" className="secondary alerts-link" aria-expanded={alertsOpen} onClick={() => setAlertsOpen((open) => !open)}>{t("alerts")} {summary.data?.alerts ?? ""}</button>
       </header>
+      <div className="command-summary">
       <QueryState loading={summary.isLoading} error={summary.error} onRetry={() => summary.refetch()}>
         {summary.data ? (
           <>
@@ -102,10 +103,10 @@ export function CommandPage() {
           </>
         ) : null}
       </QueryState>
+      </div>
       <div className="command-grid">
         <section className="map-panel">
           <div className="page-title-row">
-            <h2>{t("topology")}</h2>
             <div className="lenses" role="group" aria-label={t("topology")}>
               <button type="button" className="secondary" aria-pressed={lens === "diagram"} onClick={() => setLens("diagram")}>{t("referenceTopology")}</button>
               <button type="button" className="secondary" aria-pressed={lens === "geo"} onClick={() => setLens("geo")}>{t("geo")}</button>
@@ -129,21 +130,18 @@ export function CommandPage() {
               </ul>
             )}
           </QueryState> : <p className="note">{t("alertsCollapsed")}</p>}
-          <p className="note">{t("diagramDetails")}</p>
+          <div className="page-title-row">
+            <h2>{t("recent")}</h2>
+            <Link to="/changes">{t("changes")}</Link>
+          </div>
+          <ol className="timeline">
+            {(changes.data ?? []).slice(0, 5).map((item) => (
+              <li key={item.id}><Link to={`/changes/${item.id}`}>{item.status}</Link> <span className="note">{formatTime(item.created_at)}</span></li>
+            ))}
+          </ol>
+          {(changes.data ?? []).length === 0 ? <Empty text={t("empty")} /> : null}
         </aside>
       </div>
-      <section className="panel">
-        <div className="page-title-row">
-          <h2>{t("recent")}</h2>
-          <Link to="/changes">{t("changes")}</Link>
-        </div>
-        <ol className="timeline">
-          {(changes.data ?? []).slice(0, 8).map((item) => (
-            <li key={item.id}><Link to={`/changes/${item.id}`}>{item.status}</Link> <span className="note">{formatTime(item.created_at)}</span></li>
-          ))}
-        </ol>
-        {(changes.data ?? []).length === 0 ? <Empty text={t("empty")} /> : null}
-      </section>
     </div>
   );
 }

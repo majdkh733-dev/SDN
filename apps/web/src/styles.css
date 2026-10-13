@@ -77,6 +77,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .scrim { display: none; }
 
 .main { margin-inline-start: var(--sidebar); padding: 16px 20px 40px; min-height: 100vh; }
+.main:has(.command-room) { height: 100vh; min-height: 0; display: flex; flex-direction: column; padding-bottom: 12px; overflow: hidden; }
 .page-head { margin-bottom: 12px; }
 .crumbs ol { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 4px; padding: 0; color: var(--muted); font-size: 12px; }
 .crumbs li:not(:last-child)::after { content: "/"; margin-inline-start: 6px; }
@@ -186,7 +187,8 @@ textarea { min-height: 72px; resize: vertical; }
 .nav-moves { display: flex; gap: 4px; align-items: center; }
 .nav-moves select, .nav-edit input { width: auto; }
 .nav-edit { display: grid; gap: 6px; padding: 8px; }
-.command-room { display: grid; gap: 12px; }
+.command-room { flex: 1; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 8px; }
+.map-panel { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; overflow: hidden; }
 .command-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; justify-content: space-between; }
 .command-top h1 { font-size: 28px; letter-spacing: 0.02em; }
 .eyebrow { margin: 0; color: var(--accent, var(--blue)); font-size: 12px; letter-spacing: 0.14em; }
@@ -196,7 +198,7 @@ textarea { min-height: 72px; resize: vertical; }
 .kpi .card { padding: 8px 10px; }
 .kpi .card strong { font-size: 18px; }
 .kpi .note { margin: 2px 0 0; }
-.command-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+.command-grid { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; }
 .map-panel .graph { height: 520px; background:
   radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--blue) 18%, transparent), transparent 42%),
   var(--bg); }
@@ -218,11 +220,22 @@ pre.mono { white-space: pre-wrap; background: var(--bg); padding: 8px; border-ra
 html[data-theme="dark"] button:not(.secondary) { color: #06202a; }
 html[data-theme="dark"] .badge { background: transparent; }
 .ref-topology { display: grid; gap: 10px; }
+.ref-topology.embedded { min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .ref-toolbar, .ref-edit { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 .ref-toolbar h1 { margin: 0; font-size: 22px; }
 .ref-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 12px; min-height: 0; }
 .ref-canvas-wrap { background: #fff; border: 1px solid #111; min-height: 70vh; height: 74vh; overflow: hidden; }
-.ref-topology.embedded .ref-canvas-wrap { height: 64vh; min-height: 520px; }
+.command-summary { display: grid; gap: 6px; }
+.command-summary > .note { max-height: 2.8em; overflow: hidden; }
+.ref-topology.embedded .ref-stage { position: relative; flex: 1 1 0; min-height: 0; height: auto; overflow: hidden; grid-template-columns: minmax(0, 1fr); }
+.ref-topology.embedded .ref-canvas-wrap { width: 100%; height: 100%; min-height: 0; max-height: 100%; }
+.ref-topology.embedded .ref-canvas { position: relative; width: 100%; height: 100%; min-height: 0; }
+.ref-topology.embedded .ref-canvas > svg { position: absolute; inset: 0; width: 100%; height: 100%; max-height: 100%; }
+.ref-topology.embedded .ref-drawer.empty { display: none; }
+.ref-topology.embedded .ref-drawer {
+  position: absolute; inset-inline-end: 8px; top: 8px; bottom: 8px; width: min(340px, 42%);
+  height: auto; max-height: none; z-index: 2;
+}
 .map-table-wrap { max-height: 320px; overflow: auto; margin-top: 8px; }
 .map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .map-table th, .map-table td { border-bottom: 1px solid var(--line); text-align: start; padding: 6px 8px; vertical-align: top; }
